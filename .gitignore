@@ -132,8 +132,8 @@ dmypy.json
 .pytype/
 
 # Cython debug symbols
-cython_debug/ 
+cython_debug/
 
-
+# Project specific
+.github/workflows/
 .ai_input/
-.github/

@@ -12,17 +12,25 @@ A web application for managing WireGuard VPN tunnels, automating NAT/forwarding 
 
 ## Tech Stack
 
-- Frontend: React
-- Backend: Python 3.8 (Flask/FastAPI)
+- Backend: Python 3.8 (Flask) with Jinja2 templates
+- Frontend: HTML, CSS, JavaScript
 - Storage: Local FS for .conf files; SQLite/JSON for metadata
 - System Integration: subprocess module for wg-quick and iptables
 
 ## Development Setup
 
 1. Clone the repository
-2. Set up Python virtual environment
-3. Install dependencies
-4. Configure development environment
+2. Set up Python virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+   pip install -r requirements.txt
+   ```
+3. Run the development server:
+   ```bash
+   flask run
+   ```
+4. Open http://localhost:5000 in your browser
 
 ## Branching Strategy
 
