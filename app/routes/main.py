@@ -63,9 +63,8 @@ def index():
 
 @bp.route('/clients')
 def clients():
-    """List all WireGuard clients."""
-    clients = current_app.config_storage.list_clients()
-    return render_template('clients.html', clients=clients)
+    """Show clients page."""
+    return render_template('clients.html')
 
 @bp.route('/clients/upload', methods=['POST'])
 @rate_limit(10, 60)  # 10 requests per minute
@@ -173,20 +172,40 @@ def submit_subnet():
         'metadata': metadata
     })
 
-@bp.route('/clients/<client_id>', methods=['GET'])
-def get_client(client_id):
-    """Get client details."""
-    client = current_app.config_storage.get_client(client_id)
-    if not client:
-        return jsonify({'error': 'Client not found'}), 404
-        
-    # Get test history
-    test_history = current_app.config_storage.get_test_history(client_id)
-    
-    return jsonify({
-        'client': client,
-        'test_history': test_history
-    })
+@bp.route('/clients/<client_id>', methods=['GET', 'DELETE'])
+def client(client_id):
+    """Get or delete a client."""
+    if request.method == 'DELETE':
+        try:
+            current_app.config_storage.delete_client(client_id)
+            return jsonify({'status': 'success', 'message': 'Client deleted successfully'})
+        except Exception as e:
+            return jsonify({'status': 'error', 'error': str(e)}), 500
+    else:
+        try:
+            client = current_app.config_storage.get_client(client_id)
+            if not client:
+                return jsonify({'status': 'error', 'error': 'Client not found'}), 404
+            
+            # Get test history
+            test_history = current_app.config_storage.get_test_history(client_id)
+            
+            # Read config file content
+            try:
+                with open(client['config_path'], 'r') as f:
+                    config_content = f.read()
+                client['config_content'] = config_content
+            except Exception as e:
+                logger.error(f"Error reading config file: {e}")
+                client['config_content'] = None
+            
+            return jsonify({
+                'status': 'success',
+                'client': client,
+                'test_history': test_history or []
+            })
+        except Exception as e:
+            return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @bp.route('/clients/<client_id>/activate', methods=['POST'])
 def activate_client(client_id):
@@ -257,101 +276,6 @@ def deactivate_client(client_id):
         return jsonify({
             'status': 'success',
             'message': 'Client deactivated successfully'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@bp.route('/clients/<client_id>/delete', methods=['DELETE'])
-def delete_client(client_id):
-    """Delete a client and its config."""
-    success = current_app.config_storage.delete_client(client_id)
-    if not success:
-        return jsonify({'error': 'Client not found'}), 404
-        
-    return jsonify({
-        'status': 'success',
-        'message': 'Client deleted successfully'
-    })
-
-@bp.route('/system')
-def system():
-    """Show system metrics and status."""
-    metrics = {
-        'cpu_percent': psutil.cpu_percent(),
-        'memory_percent': psutil.virtual_memory().percent,
-        'disk_percent': psutil.disk_usage('/').percent
-    }
-    return render_template('system.html', metrics=metrics)
-
-@bp.route('/clients/<client_id>/status', methods=['GET'])
-def get_client_status(client_id):
-    """Get the status of a WireGuard client."""
-    client = current_app.config_storage.get_client(client_id)
-    if not client:
-        return jsonify({'error': 'Client not found'}), 404
-    
-    try:
-        # Get interface name from config path
-        interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
-        
-        # Get status using WireGuardService
-        status = WireGuardService.get_client_status(interface_name)
-        
-        # If we get an error about no such device, it means the interface is not active
-        if 'error' in status and 'No such device' in status['error']:
-            return jsonify({
-                'interface': interface_name,
-                'connected': False,
-                'status': 'inactive',
-                'message': 'Interface is not active'
-            })
-        
-        # Update last handshake in database if available
-        if status.get('last_handshake'):
-            current_app.config_storage.update_client_status(
-                client_id,
-                'active' if status.get('connected') else 'inactive',
-                datetime.fromisoformat(status['last_handshake'])
-            )
-        
-        return jsonify(status)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@bp.route('/system/ip_forwarding', methods=['GET'])
-def get_ip_forwarding_status():
-    """Get the current IP forwarding status."""
-    status = IPForwardingService.check_status()
-    return jsonify({
-        'enabled': status,
-        'message': 'IP forwarding is enabled' if status else 'IP forwarding is disabled'
-    })
-
-@bp.route('/system/ip_forwarding', methods=['POST'])
-def set_ip_forwarding():
-    """Enable or disable IP forwarding."""
-    if not request.is_json:
-        return jsonify({'error': 'Content-Type must be application/json'}), 400
-    
-    data = request.get_json()
-    if not isinstance(data.get('enable'), bool):
-        return jsonify({'error': 'Request must include "enable" boolean field'}), 400
-    
-    try:
-        if data['enable']:
-            success, error = IPForwardingService.enable_permanent()
-        else:
-            success, error = IPForwardingService.disable_temporary()
-            
-        if not success:
-            return jsonify({
-                'error': 'Failed to update IP forwarding',
-                'details': error
-            }), 500
-            
-        return jsonify({
-            'status': 'success',
-            'message': f"IP forwarding {'enabled' if data['enable'] else 'disabled'} successfully"
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -448,6 +372,8 @@ def test_client_connectivity(client_id):
         if custom_ip:
             # Test connectivity to custom IP
             success, result = ConnectivityTestService.test_connectivity(custom_ip)
+            # Store target for custom IP test
+            result['target'] = custom_ip
         else:
             # Test connectivity to client's AllowedIPs
             success, result = ConnectivityTestService.test_client_connectivity(
@@ -455,16 +381,38 @@ def test_client_connectivity(client_id):
                 current_app.config_storage
             )
         
+        # Always save test result to history, whether success or failure
+        current_app.config_storage.add_test_result(
+            client_id=client_id,
+            latency_ms=result.get('latency_ms'),
+            success=result.get('success', False),
+            target=result.get('target', 'N/A'),
+            error=result.get('error')
+        )
+            
         if not success:
             return jsonify({
                 'success': False,
-                'error': result.get('error', 'Connectivity test failed')
+                'error': result.get('error', 'Connectivity test failed'),
+                'target': result.get('target', 'N/A')
             }), 400
             
         return jsonify(result)
         
     except Exception as e:
         logger.error(f"Error testing connectivity: {e}")
+        # Save failed test due to exception
+        try:
+            current_app.config_storage.add_test_result(
+                client_id=client_id,
+                latency_ms=None,
+                success=False,
+                target=custom_ip if custom_ip else 'N/A',
+                error=str(e)
+            )
+        except Exception as save_error:
+            logger.error(f"Error saving failed test result: {save_error}")
+            
         return jsonify({
             'success': False,
             'error': str(e)
@@ -527,4 +475,113 @@ def get_system_metrics():
         return jsonify({
             'success': False,
             'error': str(e)
-        }), 500 
+        }), 500
+
+@bp.route('/api/clients')
+def get_clients():
+    """Get all clients as JSON."""
+    try:
+        clients = current_app.config_storage.list_clients()
+        return jsonify({
+            'status': 'success',
+            'clients': clients
+        })
+    except Exception as e:
+        logger.error(f"Error getting clients: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+@bp.route('/api/recent-activity')
+def get_recent_activity():
+    """Get recent activity for the dashboard."""
+    try:
+        # Get all clients
+        clients = current_app.config_storage.list_clients()
+        
+        # Get recent activity (last 5 actions)
+        recent_activity = []
+        for client in clients:
+            # Add activation/deactivation events
+            if client.get('last_activated'):
+                recent_activity.append({
+                    'client': client['name'],
+                    'action': 'activated',
+                    'status': 'success',
+                    'time': client['last_activated']
+                })
+            
+            if client.get('last_deactivated'):
+                recent_activity.append({
+                    'client': client['name'],
+                    'action': 'deactivated',
+                    'status': 'success',
+                    'time': client['last_deactivated']
+                })
+            
+            # Add test history
+            test_history = current_app.config_storage.get_test_history(client['id'])
+            if test_history:
+                for test in test_history[-5:]:  # Last 5 tests
+                    recent_activity.append({
+                        'client': client['name'],
+                        'action': 'connectivity test',
+                        'status': 'success' if test['success'] else 'failed',
+                        'time': test['timestamp']
+                    })
+        
+        # Sort by time and get last 5
+        recent_activity.sort(key=lambda x: x['time'], reverse=True)
+        recent_activity = recent_activity[:5]
+        
+        return jsonify({
+            'status': 'success',
+            'activity': recent_activity
+        })
+    except Exception as e:
+        logger.error(f"Error getting recent activity: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+@bp.route('/api/system-load')
+def get_system_load():
+    """Get system load for the dashboard."""
+    try:
+        # Get CPU load
+        cpu_load = psutil.cpu_percent(interval=1)
+        
+        # Get memory usage
+        memory = psutil.virtual_memory()
+        memory_percent = memory.percent
+        
+        # Get disk usage
+        disk = psutil.disk_usage('/')
+        disk_percent = disk.percent
+        
+        return jsonify({
+            'status': 'success',
+            'load': {
+                'cpu': cpu_load,
+                'memory': memory_percent,
+                'disk': disk_percent
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting system load: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+@bp.route('/clients/<client_id>/test', methods=['GET'])
+def client_testing(client_id):
+    """Show client testing page."""
+    client = current_app.config_storage.get_client(client_id)
+    if not client:
+        flash('Client not found', 'error')
+        return redirect(url_for('main.clients'))
+    
+    return render_template('client_testing.html', client_id=client_id, client=client) 
