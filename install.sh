@@ -7,6 +7,18 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Parse arguments
+SKIP_PIP=false
+for arg in "$@"
+do
+    case $arg in
+        --skip-pip)
+        SKIP_PIP=true
+        shift
+        ;;
+    esac
+done
+
 # Define directories
 INSTALL_DIR="/opt/wireguard-gateway"
 INSTANCE_DIR="$INSTALL_DIR/instance"
@@ -50,8 +62,14 @@ cp run.py $INSTALL_DIR/
 echo "Setting up Python virtual environment..."
 cd $INSTALL_DIR
 python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+
+if [ "$SKIP_PIP" = false ]; then
+    echo "Installing Python dependencies..."
+    source venv/bin/activate
+    pip install -r requirements.txt
+else
+    echo "Skipping pip install as requested"
+fi
 
 # Create run script
 echo "Creating run script..."
@@ -87,6 +105,7 @@ cat > /etc/sudoers.d/wireguard << EOF
 # Allow the wireguard user to run wg-quick commands without password
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg-quick up *
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg-quick down *
+wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg show *
 EOF
 chmod 440 /etc/sudoers.d/wireguard
 

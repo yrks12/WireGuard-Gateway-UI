@@ -7,6 +7,7 @@ from functools import wraps
 import time
 from app.services.wireguard import WireGuardService
 from app.services.pending_configs import PendingConfigsService
+from datetime import datetime
 
 bp = Blueprint('main', __name__)
 pending_configs = None
@@ -263,4 +264,39 @@ def system():
         'memory_percent': psutil.virtual_memory().percent,
         'disk_percent': psutil.disk_usage('/').percent
     }
-    return render_template('system.html', metrics=metrics) 
+    return render_template('system.html', metrics=metrics)
+
+@bp.route('/clients/<client_id>/status', methods=['GET'])
+def get_client_status(client_id):
+    """Get the status of a WireGuard client."""
+    client = current_app.config_storage.get_client(client_id)
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+    
+    try:
+        # Get interface name from config path
+        interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+        
+        # Get status using WireGuardService
+        status = WireGuardService.get_client_status(interface_name)
+        
+        # If we get an error about no such device, it means the interface is not active
+        if 'error' in status and 'No such device' in status['error']:
+            return jsonify({
+                'interface': interface_name,
+                'connected': False,
+                'status': 'inactive',
+                'message': 'Interface is not active'
+            })
+        
+        # Update last handshake in database if available
+        if status.get('last_handshake'):
+            current_app.config_storage.update_client_status(
+                client_id,
+                'active' if status.get('connected') else 'inactive',
+                datetime.fromisoformat(status['last_handshake'])
+            )
+        
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500 
