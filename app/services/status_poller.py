@@ -4,6 +4,7 @@ import psutil
 from typing import Dict, Optional, List
 from datetime import datetime
 import os
+from app.services.ip_forwarding import IPForwardingService
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class StatusPoller:
             return {
                 'cpu_percent': psutil.cpu_percent(interval=1),
                 'memory_percent': psutil.virtual_memory().percent,
+                'ip_forwarding': IPForwardingService.check_status(),
                 'timestamp': datetime.utcnow().isoformat()
             }
         except Exception as e:
