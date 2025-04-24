@@ -109,6 +109,8 @@ wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg show *
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/sysctl -w net.ipv4.ip_forward=*
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/sysctl -p
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/sysctl.conf
+wireguard ALL=(ALL) NOPASSWD: /usr/bin/resolvconf -a *
+wireguard ALL=(ALL) NOPASSWD: /usr/bin/resolvconf -d *
 EOF
 chmod 440 /etc/sudoers.d/wireguard
 
