@@ -16,7 +16,7 @@
                 <div class="mb-3">
                     <label for="configFile" class="form-label">WireGuard Config File</label>
                     <input type="file" class="form-control" id="configFile" name="config" accept=".conf" required>
-                    <div class="form-text">Upload a WireGuard .conf file. Maximum size: 10KB</div>
+                    <div class="form-text">File name must be a single word (e.g., "client.conf"). Names with hyphens or underscores (e.g., "client-name.conf" or "client_name.conf") are not allowed.</div>
                 </div>
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-upload me-2"></i>Upload
@@ -310,8 +310,7 @@
             .catch(error => {
                 console.error('Error checking forwarding rules:', error);
                 const buttonContainer = document.getElementById(`forwarding-buttons-${clientId}`);
-                buttonContainer.innerHTML = `
-                    <button class="btn btn-sm btn-secondary" disabled>
+                buttonContainer.innerHTML = `                    <button class="btn btn-sm btn-secondary" disabled>
                         <i class="fas fa-exclamation-triangle"></i> Error
                     </button>
                 `;
