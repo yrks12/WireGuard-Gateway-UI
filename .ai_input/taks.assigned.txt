@@ -1,0 +1,85 @@
+⸻
+
+	•	A. Setup Git & CI/CD
+	•	Assignee: DevOps Engineer
+	•	Description: Initialize the Git repository, define branching strategy (e.g. main/develop), configure CI pipeline (lint, pytest, build).
+	•	B. Define Project Skeleton
+	•	Assignee: DevOps Engineer
+	•	Description: Create base directories for backend/, frontend/, infra/, tests/, and add README, CODE_OF_CONDUCT, CONTRIBUTING.
+	•	C. Scaffold Backend Framework
+	•	Assignee: Backend Developer
+	•	Description: Set up Flask (or FastAPI) app with routing, request parsing, error handlers; configure Python 3.8 compatibility.
+	•	D. Config Upload Endpoint
+	•	Assignee: Backend Developer
+	•	Description: Implement POST /clients/upload to accept .conf files, save temporarily, return parse result.
+	•	E. AllowedIPs Validation
+	•	Assignee: Backend Developer
+	•	Description: Parse peer AllowedIPs; block 0.0.0.0/0, return error prompting for specific subnet.
+	•	F. Subnet Prompt Logic
+	•	Assignee: Backend Developer
+	•	Description: On validation failure, store state and expose API to accept user’s subnet input then re-validate.
+	•	G. Persist Config & Metadata
+	•	Assignee: Backend Developer
+	•	Description: Move valid .conf into /etc/wireguard/, record metadata (name, path, subnet, public key) in JSON or SQLite.
+	•	H. WireGuard CLI Integration
+	•	Assignee: Backend Developer
+	•	Description: Wrap wg-quick up/down in a Python module, capture stdout/stderr, handle errors.
+	•	I. Enable IP Forwarding
+	•	Assignee: Backend Developer
+	•	Description: Ensure net.ipv4.ip_forward=1 via sysctl, persist in /etc/sysctl.conf if needed.
+	•	J. Iptables Manager Module
+	•	Assignee: Backend Developer
+	•	Description: Create functions to add/remove NAT (POSTROUTING MASQUERADE) and FORWARD rules for each peer interface.
+	•	K. Connectivity Test Service
+	•	Assignee: Backend Developer
+	•	Description: On activation, ping a known host in client subnet, record latency and success/failure.
+	•	L. Route Command Generator
+	•	Assignee: Backend Developer
+	•	Description: Compute and return ip route add <subnet> via <gateway-LAN-IP> dev <iface> string for display.
+	•	M. CRUD API for Clients
+	•	Assignee: Backend Developer
+	•	Description: Expose REST endpoints to list, view, activate, deactivate, delete client entries.
+	•	N. Real-Time Status Polling
+	•	Assignee: Frontend Developer
+	•	Description: Implement periodic (e.g. WebSocket or polling) fetch of each client’s last handshake, ping status, system metrics.
+	•	O. Frontend Skeleton & Routing
+	•	Assignee: Frontend Developer
+	•	Description: Set up React (or Vue) app with router, global state (e.g. Redux/Vuex), and basic layout.
+	•	P. Dashboard Client List View
+	•	Assignee: Frontend Developer
+	•	Description: Table showing all clients with columns: Name, Subnet, Status, Last Handshake, Actions.
+	•	Q. Client Detail View
+	•	Assignee: Frontend Developer
+	•	Description: Display full .conf, applied iptables rules, route command, ping history chart.
+	•	R. Activation/Deactivation Controls
+	•	Assignee: Frontend Developer
+	•	Description: Buttons to call backend API for up/down; show loading state and success/error feedback.
+	•	S. System Metrics Integration
+	•	Assignee: Backend Developer & Frontend Developer
+	•	Description:
+	•	Backend: Gather CPU/RAM via psutil.
+	•	Frontend: Show live gauges or sparkline charts, refresh every 30 s.
+	•	T. Notifications & Error Handling
+	•	Assignee: Frontend Developer
+	•	Description: Toasts or inline alerts for success/failure of uploads, activations, pings, validations.
+	•	U. Unit Tests (Backend)
+	•	Assignee: QA Engineer / Backend Developer
+	•	Description: Write pytest suites covering parser, validation, CLI wrappers, iptables manager, route generator.
+	•	V. Component Tests (Frontend)
+	•	Assignee: QA Engineer / Frontend Developer
+	•	Description: Use Jest/Testing Library to cover upload form, dashboard, detail view, API error states.
+	•	W. Security Review & Sanitization
+	•	Assignee: QA Engineer
+	•	Description: Audit all inputs (subnet strings, file uploads) against injection; ensure subprocess calls are safe.
+	•	X. Performance Optimization
+	•	Assignee: Backend Developer
+	•	Description: Audit slow paths (e.g. iptables calls), cache metadata lookups, debounce UI polling.
+	•	Y. Documentation & README
+	•	Assignee: All Developers
+	•	Description: Update README with setup, usage, endpoints, environment variables; document modules with docstrings.
+	•	Z. Deployment & Infra Scripts
+	•	Assignee: DevOps Engineer
+	•	Description: Provide Ansible/Docker scripts to install dependencies, deploy app on gateway device, enable auto-start on reboot.
+
+⸻
+
