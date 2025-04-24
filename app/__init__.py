@@ -11,8 +11,14 @@ load_dotenv()
 # Initialize Flask extensions
 db = SQLAlchemy()
 
-def create_app():
-    app = Flask(__name__)
+def create_app(test_config=None):
+    app = Flask(__name__, instance_relative_config=True)
+    
+    # Ensure the instance folder exists
+    try:
+        os.makedirs(app.instance_path)
+    except OSError:
+        pass
     
     # Configure the Flask application
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev')
@@ -23,6 +29,11 @@ def create_app():
 
     # Initialize extensions
     db.init_app(app)
+
+    # Initialize services
+    with app.app_context():
+        from app.routes.main import init_pending_configs
+        init_pending_configs()
 
     # Register blueprints
     from app.routes import main

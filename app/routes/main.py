@@ -5,8 +5,16 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import time
 from app.services.wireguard import WireGuardService
+from app.services.pending_configs import PendingConfigsService
 
 bp = Blueprint('main', __name__)
+pending_configs = None
+
+def init_pending_configs():
+    """Initialize the pending configs service with the app context."""
+    global pending_configs
+    storage_dir = os.path.join(current_app.instance_path, 'pending_configs')
+    pending_configs = PendingConfigsService(storage_dir)
 
 # Rate limiting decorator
 def rate_limit(max_requests=5, time_window=60):
@@ -49,57 +57,70 @@ def clients():
     return render_template('clients.html')
 
 @bp.route('/clients/upload', methods=['POST'])
-@rate_limit(max_requests=5, time_window=60)
-def upload_client():
-    """Handle WireGuard client config upload."""
+@rate_limit(10, 60)  # 10 requests per minute
+def upload_config():
     if 'config' not in request.files:
         return jsonify({'error': 'No config file provided'}), 400
-    
-    file = request.files['config']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    # Validate file extension
-    if not file.filename.endswith('.conf'):
-        return jsonify({'error': 'Invalid file type. Please upload a .conf file'}), 400
-    
-    # Validate file size (max 10KB)
-    file.seek(0, os.SEEK_END)
-    file_size = file.tell()
-    file.seek(0)
-    if file_size > 10 * 1024:  # 10KB
-        return jsonify({'error': 'File too large. Maximum size is 10KB'}), 400
-    
+        
+    config_file = request.files['config']
+    if not config_file.filename:
+        return jsonify({'error': 'No config file selected'}), 400
+        
     try:
-        # Secure filename and create temp path
-        filename = secure_filename(file.filename)
-        temp_dir = os.path.join(current_app.instance_path, 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-        temp_path = os.path.join(temp_dir, filename)
+        config_content = config_file.read().decode('utf-8')
         
-        # Save file temporarily
-        file.save(temp_path)
+        # Validate config content
+        if not config_content.strip():
+            return jsonify({'error': 'Config file is empty'}), 400
+            
+        # Check if AllowedIPs is 0.0.0.0/0
+        if 'AllowedIPs = 0.0.0.0/0' in config_content:
+            # Store as pending config
+            config_id = pending_configs.store_pending_config(config_content)
+            return jsonify({
+                'config_id': config_id,
+                'status': 'pending_subnet',
+                'message': 'Please provide specific subnet(s)'
+            }), 200
+            
+        # If not 0.0.0.0/0, validate and process normally
+        # Validate file extension
+        if not config_file.filename.endswith('.conf'):
+            return jsonify({'error': 'Invalid file type. Please upload a .conf file'}), 400
         
-        # Read and validate config
-        with open(temp_path, 'r') as f:
-            config_content = f.read()
+        # Validate file size (max 10KB)
+        config_file.seek(0, os.SEEK_END)
+        file_size = config_file.tell()
+        config_file.seek(0)
+        if file_size > 10 * 1024:  # 10KB
+            return jsonify({'error': 'File too large. Maximum size is 10KB'}), 400
         
         # Validate config using WireGuardService
         is_valid, error_msg, config_data = WireGuardService.validate_config(config_content)
         
         if not is_valid:
-            # Clean up temp file
-            os.remove(temp_path)
-            return jsonify({'error': error_msg}), 400
+            # If the error is about 0.0.0.0/0, store as pending config
+            if "0.0.0.0/0" in error_msg:
+                config_id, pending_data = pending_configs.store_pending_config(config_content)
+                return jsonify({
+                    'status': 'pending_subnet',
+                    'config_id': config_id,
+                    'message': error_msg
+                }), 400
+            else:
+                return jsonify({'error': error_msg}), 400
         
-        # If valid, move to permanent storage
+        # If valid, save the config
+        filename = secure_filename(config_file.filename)
         config_dir = os.path.join(current_app.instance_path, 'configs')
         os.makedirs(config_dir, exist_ok=True)
-        final_path = os.path.join(config_dir, filename)
-        os.rename(temp_path, final_path)
+        config_path = os.path.join(config_dir, filename)
+        
+        with open(config_path, 'w') as f:
+            f.write(config_content)
         
         # Set proper permissions
-        os.chmod(final_path, 0o600)
+        os.chmod(config_path, 0o600)
         
         return jsonify({
             'status': 'success',
@@ -108,10 +129,33 @@ def upload_client():
         })
         
     except Exception as e:
-        # Clean up temp file if it exists
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return jsonify({'error': f'Error processing config: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/clients/subnet', methods=['POST'])
+@rate_limit(max_requests=5, time_window=60)
+def submit_subnet():
+    """Handle subnet submission for pending configs."""
+    if not request.is_json:
+        return jsonify({'error': 'Content-Type must be application/json'}), 400
+    
+    data = request.get_json()
+    if not data or 'config_id' not in data or 'subnet' not in data:
+        return jsonify({'error': 'Missing required fields: config_id and subnet'}), 400
+    
+    config_id = data['config_id']
+    subnet = data['subnet']
+    
+    # Update config with new subnet
+    success, error_msg, updated_config = pending_configs.update_config_with_subnet(config_id, subnet)
+    
+    if not success:
+        return jsonify({'error': error_msg}), 400
+    
+    return jsonify({
+        'status': 'success',
+        'message': 'Config updated successfully',
+        'config_data': updated_config
+    })
 
 @bp.route('/clients/<client_id>/activate', methods=['POST'])
 def activate_client(client_id):
