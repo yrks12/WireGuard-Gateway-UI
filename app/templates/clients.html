@@ -1,0 +1,473 @@
+{% extends "base.html" %}
+
+{% block title %}WireGuard Clients{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>WireGuard Clients</h2>
+    
+    <!-- Upload Config Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Upload New Client Config</h5>
+        </div>
+        <div class="card-body">
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="configFile" class="form-label">WireGuard Config File</label>
+                    <input type="file" class="form-control" id="configFile" name="config" accept=".conf" required>
+                    <div class="form-text">Upload a WireGuard .conf file. Maximum size: 10KB</div>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-upload me-2"></i>Upload
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Subnet Input Modal -->
+    <div class="modal fade" id="subnetModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Specify Subnet</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="subnetForm">
+                        <input type="hidden" id="subnetConfigId" name="config_id">
+                        <div class="mb-3">
+                            <label for="subnet" class="form-label">Subnet (e.g., 192.168.1.0/24)</label>
+                            <input type="text" class="form-control" id="subnet" name="subnet" required 
+                                   pattern="^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$" 
+                                   title="Please enter a valid subnet in CIDR notation">
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Submit</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Clients Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Client List</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Client Name</th>
+                            <th>Subnet</th>
+                            <th>Status</th>
+                            <th>Last Handshake</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="clients-table">
+                        <tr>
+                            <td colspan="5" class="text-center">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Client Details Modal -->
+<div class="modal fade" id="client-details-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Client Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Configuration -->
+                <div class="mb-4">
+                    <h6>Configuration</h6>
+                    <pre id="config-content" class="bg-light p-3 rounded"></pre>
+                </div>
+                
+                <!-- NAT/Forwarding Rules -->
+                <div class="mb-4">
+                    <h6>NAT/Forwarding Rules</h6>
+                    <pre id="iptables-rules" class="bg-light p-3 rounded"></pre>
+                </div>
+                
+                <!-- Router Route Command -->
+                <div class="mb-4">
+                    <h6>Router Route Command</h6>
+                    <div class="input-group">
+                        <input type="text" id="route-command" class="form-control" readonly>
+                        <button class="btn btn-outline-secondary" type="button" onclick="copyRouteCommand()">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    let currentClientId = null;
+
+    // Function to show alert
+    function showAlert(type, message) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+        setTimeout(() => alertDiv.remove(), 5000);
+    }
+    
+    // Function to update clients table
+    function updateClientsTable() {
+        fetch('/api/clients')
+            .then(response => response.json())
+            .then(data => {
+                const tableBody = document.getElementById('clients-table');
+                tableBody.innerHTML = '';
+                
+                if (!data.clients || data.clients.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="5" class="text-center">No clients found</td></tr>';
+                    return;
+                }
+                
+                data.clients.forEach(client => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${client.name || client.id}</td>
+                        <td>${client.subnet || 'N/A'}</td>
+                        <td><span class="badge ${client.status === 'active' ? 'bg-success' : 'bg-danger'}">${client.status}</span></td>
+                        <td>${client.last_handshake ? new Date(client.last_handshake).toLocaleString() : 'Never'}</td>
+                        <td>
+                            <button class="btn btn-sm ${client.status === 'active' ? 'btn-danger' : 'btn-success'}" 
+                                    onclick="toggleClientStatus('${client.id}', '${client.status}')">
+                                ${client.status === 'active' ? 'Deactivate' : 'Activate'}
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="showClientDetails('${client.id}')">View</button>
+                            <a href="/clients/${client.id}/test" class="btn btn-sm btn-warning">
+                                <i class="fas fa-network-wired"></i> Test
+                            </a>
+                            <span id="forwarding-buttons-${client.id}">
+                                <button class="btn btn-sm btn-secondary">
+                                    <span class="spinner-border spinner-border-sm"></span> Checking...
+                                </button>
+                            </span>
+                            <button class="btn btn-sm btn-danger" onclick="deleteClient('${client.id}')">Delete</button>
+                        </td>
+                    `;
+                    tableBody.appendChild(row);
+                    
+                    // Check forwarding rules status and update buttons
+                    updateForwardingButtons(client.id);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching clients:', error);
+                document.getElementById('clients-table').innerHTML = 
+                    '<tr><td colspan="5" class="text-center text-danger">Error loading clients</td></tr>';
+            });
+    }
+    
+    // Function to show client details
+    function showClientDetails(clientId) {
+        currentClientId = clientId;
+        
+        // Fetch client details
+        fetch(`/clients/${clientId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success' && data.client) {
+                    // Update config content
+                    document.getElementById('config-content').textContent = data.client.config_content || 'N/A';
+                    
+                    // Fetch forwarding rules
+                    return fetch(`/clients/${clientId}/forwarding-rules`);
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success' && data.rules) {
+                    let rulesText = '';
+                    if (data.rules.nat && data.rules.nat.length > 0) {
+                        rulesText += 'NAT Rules:\n' + data.rules.nat.join('\n') + '\n\n';
+                    }
+                    if (data.rules.forward && data.rules.forward.length > 0) {
+                        rulesText += 'Forwarding Rules:\n' + data.rules.forward.join('\n');
+                    }
+                    document.getElementById('iptables-rules').textContent = rulesText || 'No forwarding rules configured';
+                }
+                
+                // Fetch route command
+                return fetch(`/clients/${clientId}/route-command`);
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('route-command').value = data.command || 'N/A';
+                }
+                
+                // Show the modal
+                new bootstrap.Modal(document.getElementById('client-details-modal')).show();
+            })
+            .catch(error => {
+                console.error('Error fetching client details:', error);
+                showAlert('danger', 'Failed to load client details: ' + error.message);
+            });
+    }
+    
+    // Function to copy route command
+    function copyRouteCommand() {
+        const commandInput = document.getElementById('route-command');
+        commandInput.select();
+        document.execCommand('copy');
+        showAlert('success', 'Route command copied to clipboard');
+    }
+    
+    // Function to toggle client status
+    function toggleClientStatus(clientId, currentStatus) {
+        const endpoint = `/clients/${clientId}/${currentStatus === 'active' ? 'deactivate' : 'activate'}`;
+        
+        fetch(endpoint, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showAlert('success', `Client ${currentStatus === 'active' ? 'deactivated' : 'activated'} successfully`);
+                updateClientsTable();
+            } else {
+                showAlert('danger', data.error || 'Failed to update status');
+            }
+        })
+        .catch(error => {
+            console.error('Error toggling client status:', error);
+            showAlert('danger', 'Failed to update status: ' + error.message);
+        });
+    }
+    
+    // Function to delete client
+    function deleteClient(clientId) {
+        if (!confirm('Are you sure you want to delete this client?')) {
+            return;
+        }
+        
+        fetch(`/clients/${clientId}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showAlert('success', 'Client deleted successfully');
+                updateClientsTable();
+            } else {
+                showAlert('danger', data.error || 'Failed to delete client');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting client:', error);
+            showAlert('danger', 'Failed to delete client: ' + error.message);
+        });
+    }
+    
+    // Function to check and update forwarding buttons
+    function updateForwardingButtons(clientId) {
+        fetch(`/clients/${clientId}/forwarding-rules`)
+            .then(response => response.json())
+            .then(data => {
+                const buttonContainer = document.getElementById(`forwarding-buttons-${clientId}`);
+                const hasRules = data.status === 'success' && data.rules && 
+                               ((data.rules.nat && data.rules.nat.length > 0) || 
+                                (data.rules.forward && data.rules.forward.length > 0));
+                
+                if (hasRules) {
+                    buttonContainer.innerHTML = `
+                        <button class="btn btn-sm btn-secondary" onclick="cleanupForwarding('${clientId}')">
+                            <i class="fas fa-broom"></i> Cleanup Rules
+                        </button>
+                    `;
+                } else {
+                    buttonContainer.innerHTML = `
+                        <button class="btn btn-sm btn-warning" onclick="setupForwarding('${clientId}')">
+                            <i class="fas fa-route"></i> Setup Rules
+                        </button>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Error checking forwarding rules:', error);
+                const buttonContainer = document.getElementById(`forwarding-buttons-${clientId}`);
+                buttonContainer.innerHTML = `
+                    <button class="btn btn-sm btn-secondary" disabled>
+                        <i class="fas fa-exclamation-triangle"></i> Error
+                    </button>
+                `;
+            });
+    }
+    
+    // Function to setup forwarding rules
+    function setupForwarding(clientId) {
+        const button = event.target.closest('button');
+        const originalHtml = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Setting up...';
+        
+        fetch(`/clients/${clientId}/setup-forwarding`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showAlert('success', 'Forwarding rules set up successfully');
+                // Update the forwarding buttons
+                updateForwardingButtons(clientId);
+                // If client details modal is open, refresh it
+                if (currentClientId === clientId && document.getElementById('client-details-modal').classList.contains('show')) {
+                    showClientDetails(clientId);
+                }
+            } else {
+                showAlert('danger', data.error || 'Failed to set up forwarding rules');
+            }
+        })
+        .catch(error => {
+            console.error('Error setting up forwarding:', error);
+            showAlert('danger', 'Failed to set up forwarding rules: ' + error.message);
+        })
+        .finally(() => {
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+        });
+    }
+    
+    // Function to cleanup forwarding rules
+    function cleanupForwarding(clientId) {
+        if (!confirm('Are you sure you want to remove the forwarding rules for this client?')) {
+            return;
+        }
+        
+        const button = event.target.closest('button');
+        const originalHtml = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Cleaning...';
+        
+        fetch(`/clients/${clientId}/cleanup-forwarding`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showAlert('success', 'Forwarding rules cleaned up successfully');
+                // Update the forwarding buttons
+                updateForwardingButtons(clientId);
+                // If client details modal is open, refresh it
+                if (currentClientId === clientId && document.getElementById('client-details-modal').classList.contains('show')) {
+                    showClientDetails(clientId);
+                }
+            } else {
+                showAlert('danger', data.error || 'Failed to clean up forwarding rules');
+            }
+        })
+        .catch(error => {
+            console.error('Error cleaning up forwarding:', error);
+            showAlert('danger', 'Failed to clean up forwarding rules: ' + error.message);
+        })
+        .finally(() => {
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+        });
+    }
+    
+    // Handle form submission
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        const submitButton = this.querySelector('button[type="submit"]');
+        
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Uploading...';
+        
+        fetch('/clients/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'pending_subnet') {
+                document.getElementById('subnetConfigId').value = data.config_id;
+                new bootstrap.Modal(document.getElementById('subnetModal')).show();
+            } else if (data.status === 'success') {
+                showAlert('success', 'Config uploaded successfully');
+                this.reset();
+                updateClientsTable();
+            } else {
+                showAlert('danger', data.error || 'Failed to upload config');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Failed to upload config: ' + error.message);
+        })
+        .finally(() => {
+            submitButton.disabled = false;
+            submitButton.innerHTML = '<i class="fas fa-upload me-2"></i>Upload';
+        });
+    });
+    
+    // Handle subnet form submission
+    document.getElementById('subnetForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        const submitButton = this.querySelector('button[type="submit"]');
+        
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Submitting...';
+        
+        fetch('/clients/subnet', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                config_id: formData.get('config_id'),
+                subnet: formData.get('subnet')
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                bootstrap.Modal.getInstance(document.getElementById('subnetModal')).hide();
+                showAlert('success', 'Subnet added successfully');
+                this.reset();
+                updateClientsTable();
+            } else {
+                showAlert('danger', data.error || 'Failed to add subnet');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Failed to add subnet: ' + error.message);
+        })
+        .finally(() => {
+            submitButton.disabled = false;
+            submitButton.innerHTML = 'Submit';
+        });
+    });
+    
+    // Initial table update
+    updateClientsTable();
+</script>
+{% endblock %}
+{% endblock %} 

@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Client Testing - {{ client.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>Client Testing</h2>
+                <a href="{{ url_for('main.clients') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Clients
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client Info Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Client Information</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>Name:</strong> <span id="client-name"></span></p>
+                    <p><strong>Subnet:</strong> <span id="client-subnet"></span></p>
+                </div>
+                <div class="col-md-6">
+                    <p><strong>Status:</strong> <span id="client-status"></span></p>
+                    <p><strong>Last Handshake:</strong> <span id="client-handshake"></span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Testing Tools -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Testing Tools</h5>
+        </div>
+        <div class="card-body">
+            <!-- Subnet Test -->
+            <div class="mb-4">
+                <h6>Subnet Connectivity Test</h6>
+                <p class="text-muted">Test connectivity to the client's configured subnet</p>
+                <button class="btn btn-primary" onclick="runSubnetTest()">
+                    <i class="fas fa-network-wired me-2"></i>Test Subnet Connectivity
+                </button>
+            </div>
+
+            <!-- Custom IP Test -->
+            <div class="mb-4">
+                <h6>Custom IP Test</h6>
+                <p class="text-muted">Test connectivity to a specific IP address or subnet</p>
+                <div class="input-group">
+                    <input type="text" id="custom-ip" class="form-control" 
+                           placeholder="Enter IP address or subnet (e.g., 192.168.1.1 or 192.168.1.0/24)"
+                           pattern="^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?$"
+                           title="Enter a valid IP address or CIDR notation">
+                    <button class="btn btn-primary" onclick="runCustomTest()">
+                        <i class="fas fa-search me-2"></i>Test Custom IP
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test History -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Test History</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Target</th>
+                            <th>Latency (ms)</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="test-history">
+                        <tr>
+                            <td colspan="4" class="text-center">Loading test history...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    let clientId = '{{ client_id }}';
+
+    // Function to load client details
+    function loadClientDetails() {
+        fetch(`/clients/${clientId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success' && data.client) {
+                    document.getElementById('client-name').textContent = data.client.name;
+                    document.getElementById('client-subnet').textContent = data.client.subnet;
+                    document.getElementById('client-status').innerHTML = 
+                        `<span class="badge ${data.client.status === 'active' ? 'bg-success' : 'bg-danger'}">
+                            ${data.client.status}
+                        </span>`;
+                    document.getElementById('client-handshake').textContent = 
+                        data.client.last_handshake ? new Date(data.client.last_handshake).toLocaleString() : 'Never';
+                    
+                    updateTestHistory(data.test_history || []);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading client details:', error);
+                showAlert('danger', 'Failed to load client details');
+            });
+    }
+
+    // Function to show alert
+    function showAlert(type, message) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+        setTimeout(() => alertDiv.remove(), 5000);
+    }
+
+    // Function to update test history table
+    function updateTestHistory(history) {
+        const historyBody = document.getElementById('test-history');
+        historyBody.innerHTML = '';
+        
+        if (history.length === 0) {
+            historyBody.innerHTML = '<tr><td colspan="4" class="text-center">No test history available</td></tr>';
+            return;
+        }
+        
+        history.forEach(test => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${new Date(test.timestamp).toLocaleString()}</td>
+                <td>${test.target || 'N/A'}</td>
+                <td>${test.latency_ms || 'N/A'}</td>
+                <td>
+                    <span class="badge ${test.success ? 'bg-success' : 'bg-danger'}">
+                        ${test.success ? 'Success' : 'Failed'}
+                    </span>
+                    ${test.error ? `<div class="small text-danger mt-1">${test.error}</div>` : ''}
+                </td>
+            `;
+            historyBody.appendChild(row);
+        });
+    }
+
+    // Function to run subnet test
+    function runSubnetTest() {
+        fetch(`/clients/${clientId}/test-connectivity`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', 'Subnet connectivity test completed');
+                loadClientDetails();  // Refresh test history
+            } else {
+                showAlert('danger', data.error || 'Failed to run subnet test');
+            }
+        })
+        .catch(error => {
+            console.error('Error running subnet test:', error);
+            showAlert('danger', 'Failed to run subnet test: ' + error.message);
+        });
+    }
+
+    // Function to run custom IP test
+    function runCustomTest() {
+        const customIp = document.getElementById('custom-ip').value.trim();
+        if (!customIp) {
+            showAlert('warning', 'Please enter an IP address or subnet');
+            return;
+        }
+
+        fetch(`/clients/${clientId}/test-connectivity`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ ip: customIp })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', 'Custom IP test completed');
+                document.getElementById('custom-ip').value = '';  // Clear input
+                loadClientDetails();  // Refresh test history
+            } else {
+                showAlert('danger', data.error || 'Failed to run custom IP test');
+            }
+        })
+        .catch(error => {
+            console.error('Error running custom IP test:', error);
+            showAlert('danger', 'Failed to run custom IP test: ' + error.message);
+        });
+    }
+
+    // Load initial data
+    loadClientDetails();
+</script>
+{% endblock %}
+{% endblock %} 
