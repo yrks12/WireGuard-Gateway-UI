@@ -117,6 +117,7 @@ wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -t nat -D POSTROUTING *
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -D FORWARD *
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -t nat -L POSTROUTING -v -n
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -L FORWARD -v -n
+wireguard ALL=(ALL) NOPASSWD: /usr/bin/ping -c 1 -W 2 *
 EOF
 chmod 440 /etc/sudoers.d/wireguard
 

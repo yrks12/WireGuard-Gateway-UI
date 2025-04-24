@@ -10,6 +10,7 @@ from app.services.pending_configs import PendingConfigsService
 from app.services.ip_forwarding import IPForwardingService
 from datetime import datetime
 from app.services.iptables_manager import IptablesManager
+from app.services.connectivity_test import ConnectivityTestService
 
 bp = Blueprint('main', __name__)
 pending_configs = None
@@ -430,4 +431,36 @@ def get_forwarding_rules(client_id):
             'rules': rules
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500 
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/clients/<client_id>/test-connectivity', methods=['POST'])
+def test_client_connectivity(client_id):
+    """Test connectivity to a client's subnet or a specific IP."""
+    try:
+        # Get custom IP from request if provided
+        custom_ip = request.json.get('ip') if request.is_json else None
+        
+        if custom_ip:
+            # Test connectivity to custom IP
+            success, result = ConnectivityTestService.test_connectivity(custom_ip)
+        else:
+            # Test connectivity to client's AllowedIPs
+            success, result = ConnectivityTestService.test_client_connectivity(
+                client_id,
+                current_app.config_storage
+            )
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Connectivity test failed')
+            }), 400
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error testing connectivity: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500 
