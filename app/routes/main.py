@@ -5,12 +5,16 @@ import subprocess
 from werkzeug.utils import secure_filename
 from functools import wraps
 import time
+import logging
 from app.services.wireguard import WireGuardService
 from app.services.pending_configs import PendingConfigsService
 from app.services.ip_forwarding import IPForwardingService
 from datetime import datetime
 from app.services.iptables_manager import IptablesManager
 from app.services.connectivity_test import ConnectivityTestService
+from app.services.route_command_generator import RouteCommandGenerator
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('main', __name__)
 pending_configs = None
@@ -460,6 +464,41 @@ def test_client_connectivity(client_id):
         
     except Exception as e:
         logger.error(f"Error testing connectivity: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@bp.route('/clients/<client_id>/route-command', methods=['GET'])
+def get_route_command(client_id):
+    """Get the route command for a client's subnet."""
+    try:
+        client = current_app.config_storage.get_client(client_id)
+        if not client:
+            return jsonify({'error': 'Client not found'}), 404
+        
+        # Get the client's subnet
+        subnet = client.get('subnet')
+        if not subnet:
+            return jsonify({'error': 'No subnet found for client'}), 400
+        
+        # Generate route command
+        success, result = RouteCommandGenerator.generate_route_command(subnet)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': result
+            }), 400
+            
+        return jsonify({
+            'success': True,
+            'command': result,
+            'subnet': subnet
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating route command: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

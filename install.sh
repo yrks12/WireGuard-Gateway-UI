@@ -118,6 +118,9 @@ wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -D FORWARD *
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -t nat -L POSTROUTING -v -n
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -L FORWARD -v -n
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/ping -c 1 -W 2 *
+wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg show *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/ip route show default
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/ip addr show *
 EOF
 chmod 440 /etc/sudoers.d/wireguard
 
