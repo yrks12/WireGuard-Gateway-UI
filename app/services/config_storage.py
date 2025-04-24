@@ -43,6 +43,8 @@ class ConfigStorageService:
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     latency_ms INTEGER,
                     success BOOLEAN,
+                    target TEXT,
+                    error TEXT,
                     FOREIGN KEY (client_id) REFERENCES clients (id)
                 )
             """)
@@ -176,19 +178,19 @@ class ConfigStorageService:
                     WHERE id = ?
                 """, (status, client_id))
     
-    def add_test_result(self, client_id: str, latency_ms: int, success: bool):
+    def add_test_result(self, client_id: str, latency_ms: Optional[int], success: bool, target: str = 'N/A', error: Optional[str] = None):
         """Add a connectivity test result."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
-                INSERT INTO test_history (client_id, latency_ms, success)
-                VALUES (?, ?, ?)
-            """, (client_id, latency_ms, success))
+                INSERT INTO test_history (client_id, latency_ms, success, target, error)
+                VALUES (?, ?, ?, ?, ?)
+            """, (client_id, latency_ms, success, target, error))
     
     def get_test_history(self, client_id: str, limit: int = 5) -> List[Dict]:
         """Get recent test history for a client."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
-                SELECT timestamp, latency_ms, success
+                SELECT timestamp, latency_ms, success, target, error
                 FROM test_history
                 WHERE client_id = ?
                 ORDER BY timestamp DESC
@@ -198,7 +200,9 @@ class ConfigStorageService:
             return [{
                 'timestamp': row[0],
                 'latency_ms': row[1],
-                'success': row[2]
+                'success': row[2],
+                'target': row[3],
+                'error': row[4]
             } for row in cursor.fetchall()]
     
     def delete_client(self, client_id: str) -> bool:
