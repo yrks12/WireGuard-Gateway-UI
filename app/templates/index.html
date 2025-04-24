@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h2>WireGuard Gateway Dashboard</h2>
+    
+    <div class="dashboard__stats">
+        <div class="stat-card">
+            <h3>Active Clients</h3>
+            <p class="stat-value">{{ active_clients|default(0) }}</p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Total Clients</h3>
+            <p class="stat-value">{{ total_clients|default(0) }}</p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>System Load</h3>
+            <p class="stat-value">{{ "%.1f"|format(system_load|default(0.0)) }}%</p>
+        </div>
+    </div>
+
+    <div class="dashboard__actions">
+        <a href="{{ url_for('main.clients') }}" class="btn btn-primary">Manage Clients</a>
+        <a href="{{ url_for('main.system') }}" class="btn btn-primary">System Status</a>
+    </div>
+
+    {% if recent_clients %}
+    <div class="dashboard__recent">
+        <h3>Recent Activity</h3>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Client</th>
+                    <th>Status</th>
+                    <th>Last Handshake</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for client in recent_clients %}
+                <tr>
+                    <td>{{ client.name }}</td>
+                    <td>
+                        <span class="status status--{{ client.status }}">
+                            {{ client.status }}
+                        </span>
+                    </td>
+                    <td>{{ client.last_handshake|default('Never', true) }}</td>
+                    <td>
+                        {% if client.status == 'active' %}
+                        <form method="POST" action="{{ url_for('main.deactivate_client', client_id=client.id) }}" style="display: inline;">
+                            <button type="submit" class="btn btn-danger">Deactivate</button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('main.activate_client', client_id=client.id) }}" style="display: inline;">
+                            <button type="submit" class="btn btn-primary">Activate</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.dashboard {
+    padding: 1rem;
+}
+
+.dashboard__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+.dashboard__actions {
+    margin-bottom: 2rem;
+}
+
+.status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.status--active {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.status--inactive {
+    background-color: var(--danger-color);
+    color: white;
+}
+</style>
+{% endblock %} 
