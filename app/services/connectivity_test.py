@@ -75,7 +75,11 @@ class ConnectivityTestService:
         """
         target = ConnectivityTestService._get_ping_target(subnet)
         if not target:
-            return False, {'error': 'Could not determine ping target'}
+            return False, {
+                'success': False,
+                'target': subnet,
+                'error': 'Could not determine ping target'
+            }
         
         for attempt in range(ConnectivityTestService.PING_RETRIES):
             try:
@@ -127,7 +131,11 @@ class ConnectivityTestService:
         """
         client = config_storage.get_client(client_id)
         if not client:
-            return False, {'error': 'Client not found'}
+            return False, {
+                'success': False,
+                'error': 'Client not found',
+                'target': 'N/A'
+            }
         
         # Get interface name from config path
         interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
@@ -135,7 +143,11 @@ class ConnectivityTestService:
         # Get AllowedIPs from WireGuard interface
         allowed_ips = ConnectivityTestService._get_allowed_ips(interface_name)
         if not allowed_ips:
-            return False, {'error': 'No AllowedIPs found for client'}
+            return False, {
+                'success': False,
+                'error': 'No AllowedIPs found for client',
+                'target': 'N/A'
+            }
         
         # Test connectivity to each AllowedIP subnet
         results = []
@@ -145,11 +157,13 @@ class ConnectivityTestService:
             
             # If any subnet is reachable, consider it a success
             if success:
-                break
-        
-        # Return the first successful result or the last failed result
-        for result in results:
-            if result.get('success'):
                 return True, result
-                
-        return False, results[-1] if results else {'error': 'No subnets to test'} 
+        
+        # If all tests failed, return the last result
+        last_result = results[-1] if results else {
+            'success': False,
+            'error': 'No subnets to test',
+            'target': 'N/A',
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        return False, last_result 
