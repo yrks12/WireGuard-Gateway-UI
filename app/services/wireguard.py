@@ -37,7 +37,7 @@ class WireGuardService:
         """
         # Split by comma or space, then strip whitespace
         return [ip.strip() for ip in re.split(r'[,\s]+', allowed_ips_str) if ip.strip()]
-
+    
     @staticmethod
     def validate_config(config_content: str) -> Tuple[bool, Optional[str], Optional[Dict]]:
         """

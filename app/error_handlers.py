@@ -1,4 +1,4 @@
-from flask import render_template, jsonify
+from flask import jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
 def register_error_handlers(app):
@@ -15,7 +15,7 @@ def register_error_handlers(app):
         return render_template('errors/500.html'), 500
 
     @app.errorhandler(HTTPException)
-    def handle_http_error(error):
+    def handle_http_exception(error):
         if request_wants_json():
             return jsonify({'error': error.description}), error.code
         return render_template('errors/generic.html', error=error), error.code

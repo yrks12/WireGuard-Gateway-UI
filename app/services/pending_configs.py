@@ -4,6 +4,9 @@ import re
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PendingConfigsService:
     """Service for managing WireGuard configs pending subnet input."""
@@ -40,21 +43,31 @@ class PendingConfigsService:
         return config_id
     
     def get_pending_config(self, config_id: str) -> Optional[Dict]:
-        """Retrieve a pending config by ID."""
+        """Get a pending config by ID."""
         config_path = self._get_config_path(config_id)
         if not os.path.exists(config_path):
             return None
-        
-        with open(config_path, 'r') as f:
-            config_data = json.load(f)
-        
-        # Check if expired
-        expires_at = datetime.fromisoformat(config_data['expires_at'])
-        if datetime.utcnow() > expires_at:
-            self.delete_pending_config(config_id)
+
+        try:
+            with open(config_path, 'r') as f:
+                config_data = json.load(f)
+
+            # Check if expired
+            if 'expires_at' not in config_data:
+                # If no expiration set, set it to 24 hours from now
+                config_data['expires_at'] = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+                with open(config_path, 'w') as f:
+                    json.dump(config_data, f)
+            else:
+                expires_at = datetime.fromisoformat(config_data['expires_at'])
+                if datetime.utcnow() > expires_at:
+                    self.delete_pending_config(config_id)
+                    return None
+
+            return config_data
+        except Exception as e:
+            logger.error(f"Error reading pending config {config_id}: {str(e)}")
             return None
-        
-        return config_data
     
     def update_config_with_subnet(self, config_id: str, subnet: str) -> Tuple[bool, Optional[str], Optional[Dict]]:
         """

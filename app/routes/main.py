@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, jsonify
 import os
 import psutil
+import subprocess
 from werkzeug.utils import secure_filename
 from functools import wraps
 import time
@@ -54,7 +55,8 @@ def index():
 @bp.route('/clients')
 def clients():
     """List all WireGuard clients."""
-    return render_template('clients.html')
+    clients = current_app.config_storage.list_clients()
+    return render_template('clients.html', clients=clients)
 
 @bp.route('/clients/upload', methods=['POST'])
 @rate_limit(10, 60)  # 10 requests per minute
@@ -101,7 +103,7 @@ def upload_config():
         if not is_valid:
             # If the error is about 0.0.0.0/0, store as pending config
             if "0.0.0.0/0" in error_msg:
-                config_id, pending_data = pending_configs.store_pending_config(config_content)
+                config_id = pending_configs.store_pending_config(config_content)
                 return jsonify({
                     'status': 'pending_subnet',
                     'config_id': config_id,
@@ -110,22 +112,19 @@ def upload_config():
             else:
                 return jsonify({'error': error_msg}), 400
         
-        # If valid, save the config
-        filename = secure_filename(config_file.filename)
-        config_dir = os.path.join(current_app.instance_path, 'configs')
-        os.makedirs(config_dir, exist_ok=True)
-        config_path = os.path.join(config_dir, filename)
-        
-        with open(config_path, 'w') as f:
-            f.write(config_content)
-        
-        # Set proper permissions
-        os.chmod(config_path, 0o600)
+        # Store the config and metadata
+        client_id, metadata = current_app.config_storage.store_config(
+            config_content,
+            config_data['subnets'][0],  # Use first subnet
+            config_data['public_key'],
+            original_filename=config_file.filename
+        )
         
         return jsonify({
             'status': 'success',
             'message': 'Config uploaded and validated successfully',
-            'config_data': config_data
+            'client_id': client_id,
+            'metadata': metadata
         })
         
     except Exception as e:
@@ -151,23 +150,110 @@ def submit_subnet():
     if not success:
         return jsonify({'error': error_msg}), 400
     
+    # Store the updated config and metadata
+    client_id, metadata = current_app.config_storage.store_config(
+        updated_config['content'],
+        subnet,
+        updated_config['public_key']
+    )
+    
     return jsonify({
         'status': 'success',
         'message': 'Config updated successfully',
-        'config_data': updated_config
+        'client_id': client_id,
+        'metadata': metadata
+    })
+
+@bp.route('/clients/<client_id>', methods=['GET'])
+def get_client(client_id):
+    """Get client details."""
+    client = current_app.config_storage.get_client(client_id)
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+        
+    # Get test history
+    test_history = current_app.config_storage.get_test_history(client_id)
+    
+    return jsonify({
+        'client': client,
+        'test_history': test_history
     })
 
 @bp.route('/clients/<client_id>/activate', methods=['POST'])
 def activate_client(client_id):
     """Activate a WireGuard client."""
-    # TODO: Implement client activation
-    return {'status': 'success', 'message': 'Client activated'}
+    client = current_app.config_storage.get_client(client_id)
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+    
+    try:
+        # Run wg-quick up with sudo
+        config_path = client['config_path']
+        result = subprocess.run(
+            ['sudo', 'wg-quick', 'up', config_path],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            return jsonify({
+                'error': 'Failed to activate client',
+                'details': result.stderr
+            }), 500
+        
+        # Update client status
+        current_app.config_storage.update_client_status(client_id, 'active')
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Client activated successfully'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @bp.route('/clients/<client_id>/deactivate', methods=['POST'])
 def deactivate_client(client_id):
     """Deactivate a WireGuard client."""
-    # TODO: Implement client deactivation
-    return {'status': 'success', 'message': 'Client deactivated'}
+    client = current_app.config_storage.get_client(client_id)
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+    
+    try:
+        # Run wg-quick down with sudo
+        config_path = client['config_path']
+        result = subprocess.run(
+            ['sudo', 'wg-quick', 'down', config_path],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            return jsonify({
+                'error': 'Failed to deactivate client',
+                'details': result.stderr
+            }), 500
+        
+        # Update client status
+        current_app.config_storage.update_client_status(client_id, 'inactive')
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Client deactivated successfully'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/clients/<client_id>/delete', methods=['DELETE'])
+def delete_client(client_id):
+    """Delete a client and its config."""
+    success = current_app.config_storage.delete_client(client_id)
+    if not success:
+        return jsonify({'error': 'Client not found'}), 404
+        
+    return jsonify({
+        'status': 'success',
+        'message': 'Client deleted successfully'
+    })
 
 @bp.route('/system')
 def system():
