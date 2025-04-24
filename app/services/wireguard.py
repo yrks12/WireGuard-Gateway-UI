@@ -143,7 +143,9 @@ class WireGuardService:
             # Extract last handshake time if available
             handshake_match = re.search(r'latest handshake: (.+)', output)
             if handshake_match:
-                status['last_handshake'] = handshake_match.group(1)
+                handshake_str = handshake_match.group(1).strip()
+                if handshake_str != 'Never':
+                    status['last_handshake'] = handshake_str
                 
             return status
         except Exception as e:

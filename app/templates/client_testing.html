@@ -28,7 +28,11 @@
                 </div>
                 <div class="col-md-6">
                     <p><strong>Status:</strong> <span id="client-status"></span></p>
-                    <p><strong>Last Handshake:</strong> <span id="client-handshake"></span></p>
+                    <p><strong>Last Handshake:</strong> <span id="client-handshake"></span>
+                        <button class="btn btn-sm btn-outline-primary ms-2" onclick="checkHandshake()">
+                            <i class="fas fa-sync-alt"></i> Check
+                        </button>
+                    </p>
                 </div>
             </div>
         </div>
@@ -96,6 +100,29 @@
 {% block extra_js %}
 <script>
     let clientId = '{{ client_id }}';
+
+    // Function to check handshake
+    function checkHandshake() {
+        const handshakeSpan = document.getElementById('client-handshake');
+        const originalText = handshakeSpan.textContent;
+        handshakeSpan.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Checking...';
+        
+        fetch(`/clients/${clientId}/handshake`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    handshakeSpan.textContent = data.last_handshake || 'Never';
+                    showAlert('success', 'Handshake status updated');
+                } else {
+                    handshakeSpan.textContent = originalText;
+                    showAlert('danger', data.error || 'Failed to check handshake');
+                }
+            })
+            .catch(error => {
+                handshakeSpan.textContent = originalText;
+                showAlert('danger', 'Failed to check handshake: ' + error.message);
+            });
+    }
 
     // Function to load client details
     function loadClientDetails() {

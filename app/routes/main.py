@@ -9,7 +9,7 @@ import logging
 from app.services.wireguard import WireGuardService
 from app.services.pending_configs import PendingConfigsService
 from app.services.ip_forwarding import IPForwardingService
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.services.iptables_manager import IptablesManager
 from app.services.connectivity_test import ConnectivityTestService
 from app.services.route_command_generator import RouteCommandGenerator
@@ -584,4 +584,75 @@ def client_testing(client_id):
         flash('Client not found', 'error')
         return redirect(url_for('main.clients'))
     
-    return render_template('client_testing.html', client_id=client_id, client=client) 
+    return render_template('client_testing.html', client_id=client_id, client=client)
+
+@bp.route('/clients/<client_id>/handshake', methods=['GET'])
+def check_handshake(client_id):
+    """Check the last handshake time for a client."""
+    try:
+        client = current_app.config_storage.get_client(client_id)
+        if not client:
+            return jsonify({'error': 'Client not found'}), 404
+        
+        # Get interface name from config path
+        interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+        
+        # Get current handshake status
+        status = WireGuardService.get_client_status(interface_name)
+        if 'error' in status:
+            return jsonify({
+                'error': status['error'],
+                'last_handshake': None
+            }), 500
+        
+        # Update the last handshake in the database if available
+        if status.get('last_handshake'):
+            try:
+                # Calculate the actual timestamp by subtracting the time ago from current time
+                handshake_str = status['last_handshake']
+                total_seconds = 0
+                
+                # Handle combined formats like "1 minute, 45 seconds ago"
+                if ',' in handshake_str:
+                    parts = handshake_str.split(',')
+                    for part in parts:
+                        part = part.strip()
+                        if 'minute' in part:
+                            minutes = int(part.split()[0])
+                            total_seconds += minutes * 60
+                        elif 'second' in part:
+                            seconds = int(part.split()[0])
+                            total_seconds += seconds
+                else:
+                    # Handle single unit formats
+                    if 'seconds ago' in handshake_str:
+                        total_seconds = int(handshake_str.split()[0])
+                    elif 'minutes ago' in handshake_str:
+                        total_seconds = int(handshake_str.split()[0]) * 60
+                    elif 'hours ago' in handshake_str:
+                        total_seconds = int(handshake_str.split()[0]) * 3600
+                    elif 'days ago' in handshake_str:
+                        total_seconds = int(handshake_str.split()[0]) * 86400
+                
+                handshake_time = datetime.utcnow() - timedelta(seconds=total_seconds)
+                
+                current_app.config_storage.update_client_status(
+                    client_id,
+                    client['status'],
+                    handshake_time
+                )
+            except (ValueError, TypeError) as e:
+                logger.error(f"Error parsing handshake time: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'last_handshake': status.get('last_handshake'),
+            'connected': status.get('connected', False)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error checking handshake: {e}")
+        return jsonify({
+            'error': str(e),
+            'last_handshake': None
+        }), 500
