@@ -13,6 +13,7 @@ from datetime import datetime
 from app.services.iptables_manager import IptablesManager
 from app.services.connectivity_test import ConnectivityTestService
 from app.services.route_command_generator import RouteCommandGenerator
+from app.services.status_poller import StatusPoller
 
 logger = logging.getLogger(__name__)
 
@@ -499,6 +500,30 @@ def get_route_command(client_id):
         
     except Exception as e:
         logger.error(f"Error generating route command: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@bp.route('/system/metrics', methods=['GET'])
+def get_system_metrics():
+    """Get system-wide metrics (CPU, RAM, etc.)."""
+    try:
+        metrics = StatusPoller.get_system_metrics()
+        
+        if 'error' in metrics:
+            return jsonify({
+                'success': False,
+                'error': metrics['error']
+            }), 400
+            
+        return jsonify({
+            'success': True,
+            'metrics': metrics
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting system metrics: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
