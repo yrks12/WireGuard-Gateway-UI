@@ -106,6 +106,9 @@ cat > /etc/sudoers.d/wireguard << EOF
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg-quick up *
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg-quick down *
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg show *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/sysctl -w net.ipv4.ip_forward=*
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/sysctl -p
+wireguard ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/sysctl.conf
 EOF
 chmod 440 /etc/sudoers.d/wireguard
 

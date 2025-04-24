@@ -7,6 +7,7 @@ from functools import wraps
 import time
 from app.services.wireguard import WireGuardService
 from app.services.pending_configs import PendingConfigsService
+from app.services.ip_forwarding import IPForwardingService
 from datetime import datetime
 
 bp = Blueprint('main', __name__)
@@ -188,6 +189,15 @@ def activate_client(client_id):
         return jsonify({'error': 'Client not found'}), 404
     
     try:
+        # First, ensure IP forwarding is enabled
+        if not IPForwardingService.check_status():
+            success, error = IPForwardingService.enable_permanent()
+            if not success:
+                return jsonify({
+                    'error': 'Failed to enable IP forwarding',
+                    'details': error
+                }), 500
+        
         # Run wg-quick up with sudo
         config_path = client['config_path']
         result = subprocess.run(
@@ -298,5 +308,43 @@ def get_client_status(client_id):
             )
         
         return jsonify(status)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/system/ip_forwarding', methods=['GET'])
+def get_ip_forwarding_status():
+    """Get the current IP forwarding status."""
+    status = IPForwardingService.check_status()
+    return jsonify({
+        'enabled': status,
+        'message': 'IP forwarding is enabled' if status else 'IP forwarding is disabled'
+    })
+
+@bp.route('/system/ip_forwarding', methods=['POST'])
+def set_ip_forwarding():
+    """Enable or disable IP forwarding."""
+    if not request.is_json:
+        return jsonify({'error': 'Content-Type must be application/json'}), 400
+    
+    data = request.get_json()
+    if not isinstance(data.get('enable'), bool):
+        return jsonify({'error': 'Request must include "enable" boolean field'}), 400
+    
+    try:
+        if data['enable']:
+            success, error = IPForwardingService.enable_permanent()
+        else:
+            success, error = IPForwardingService.disable_temporary()
+            
+        if not success:
+            return jsonify({
+                'error': 'Failed to update IP forwarding',
+                'details': error
+            }), 500
+            
+        return jsonify({
+            'status': 'success',
+            'message': f"IP forwarding {'enabled' if data['enable'] else 'disabled'} successfully"
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500 
