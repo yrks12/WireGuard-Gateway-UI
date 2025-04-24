@@ -3,115 +3,267 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="dashboard">
-    <h2>WireGuard Gateway Dashboard</h2>
-    
-    <div class="dashboard__stats">
-        <div class="stat-card">
-            <h3>Active Clients</h3>
-            <p class="stat-value">{{ active_clients|default(0) }}</p>
-        </div>
-        
-        <div class="stat-card">
-            <h3>Total Clients</h3>
-            <p class="stat-value">{{ total_clients|default(0) }}</p>
-        </div>
-        
-        <div class="stat-card">
-            <h3>System Load</h3>
-            <p class="stat-value">{{ "%.1f"|format(system_load|default(0.0)) }}%</p>
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h1 class="display-4 mb-4">WireGuard Gateway Management</h1>
+                <p class="lead">Streamline your WireGuard VPN tunnel management with automated configuration, monitoring, and routing.</p>
+            </div>
         </div>
     </div>
-
-    <div class="dashboard__actions">
-        <a href="{{ url_for('main.clients') }}" class="btn btn-primary">Manage Clients</a>
-        <a href="{{ url_for('main.system') }}" class="btn btn-primary">System Status</a>
-    </div>
-
-    {% if recent_clients %}
-    <div class="dashboard__recent">
-        <h3>Recent Activity</h3>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Client</th>
-                    <th>Status</th>
-                    <th>Last Handshake</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for client in recent_clients %}
-                <tr>
-                    <td>{{ client.name }}</td>
-                    <td>
-                        <span class="status status--{{ client.status }}">
-                            {{ client.status }}
-                        </span>
-                    </td>
-                    <td>{{ client.last_handshake|default('Never', true) }}</td>
-                    <td>
-                        {% if client.status == 'active' %}
-                        <form method="POST" action="{{ url_for('main.deactivate_client', client_id=client.id) }}" style="display: inline;">
-                            <button type="submit" class="btn btn-danger">Deactivate</button>
-                        </form>
-                        {% else %}
-                        <form method="POST" action="{{ url_for('main.activate_client', client_id=client.id) }}" style="display: inline;">
-                            <button type="submit" class="btn btn-primary">Activate</button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
 </div>
 
+<div class="row mb-4">
+    <!-- Quick Stats -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-chart-line text-primary me-2"></i>System Overview
+                </h5>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span>Active Clients</span>
+                    <span class="badge bg-primary" id="active-clients-count">0</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span>Total Clients</span>
+                    <span class="badge bg-info" id="total-clients-count">0</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>System Load</span>
+                    <span class="badge bg-warning" id="system-load">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-bolt text-warning me-2"></i>Quick Actions
+                </h5>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('main.clients') }}" class="btn btn-primary">
+                        <i class="fas fa-upload me-2"></i>Upload New Client
+                    </a>
+                    <a href="{{ url_for('main.clients') }}" class="btn btn-info">
+                        <i class="fas fa-list me-2"></i>Manage Clients
+                    </a>
+                    <a href="{{ url_for('main.get_system_metrics') }}" class="btn btn-secondary">
+                        <i class="fas fa-cogs me-2"></i>System Settings
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Status -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-shield-alt text-success me-2"></i>System Status
+                </h5>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span>IP Forwarding</span>
+                    <span class="badge" id="ip-forwarding-badge">Loading...</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span>CPU Usage</span>
+                    <div class="progress flex-grow-1 mx-2" style="height: 20px;">
+                        <div class="progress-bar" id="cpu-progress" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <span id="cpu-percent">0%</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Memory Usage</span>
+                    <div class="progress flex-grow-1 mx-2" style="height: 20px;">
+                        <div class="progress-bar bg-info" id="memory-progress" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <span id="memory-percent">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Features Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title mb-4">Key Features</h2>
+                <div class="row">
+                    <div class="col-md-4 mb-4">
+                        <div class="feature-card p-3">
+                            <i class="fas fa-file-upload fa-2x text-primary mb-3"></i>
+                            <h4>Config Management</h4>
+                            <p>Upload and validate WireGuard client configurations with automatic subnet validation and sanitization.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-4">
+                        <div class="feature-card p-3">
+                            <i class="fas fa-network-wired fa-2x text-success mb-3"></i>
+                            <h4>Automated Routing</h4>
+                            <p>Automatic setup of NAT and forwarding rules with generated router route commands for each client subnet.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-4">
+                        <div class="feature-card p-3">
+                            <i class="fas fa-chart-bar fa-2x text-info mb-3"></i>
+                            <h4>Real-time Monitoring</h4>
+                            <p>Monitor tunnel health, handshake times, connectivity, and system resource usage in real-time.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-history me-2"></i>Recent Activity
+                </h5>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Client</th>
+                                <th>Action</th>
+                                <th>Status</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-activity">
+                            <tr>
+                                <td colspan="4" class="text-center">Loading activity...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
 <style>
-.dashboard {
-    padding: 1rem;
-}
-
-.dashboard__stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-}
-
-.stat-card {
-    background: white;
-    padding: 1rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.stat-value {
-    font-size: 2rem;
-    font-weight: bold;
-    color: var(--accent-color);
-}
-
-.dashboard__actions {
-    margin-bottom: 2rem;
-}
-
-.status {
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.875rem;
-}
-
-.status--active {
-    background-color: var(--success-color);
-    color: white;
-}
-
-.status--inactive {
-    background-color: var(--danger-color);
-    color: white;
-}
+    .feature-card {
+        background-color: #fff;
+        border-radius: 8px;
+        transition: transform 0.2s;
+        height: 100%;
+    }
+    
+    .feature-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .feature-card i {
+        color: var(--accent-color);
+    }
+    
+    .progress {
+        background-color: #e9ecef;
+    }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Function to update dashboard metrics
+    function updateDashboardMetrics() {
+        // Fetch system metrics
+        fetch('/system/metrics')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update CPU and Memory
+                    document.getElementById('cpu-percent').textContent = `${data.metrics.cpu_percent.toFixed(1)}%`;
+                    document.getElementById('memory-percent').textContent = `${data.metrics.memory_percent.toFixed(1)}%`;
+                    document.getElementById('cpu-progress').style.width = `${data.metrics.cpu_percent}%`;
+                    document.getElementById('memory-progress').style.width = `${data.metrics.memory_percent}%`;
+                    
+                    // Update IP Forwarding status
+                    const ipForwardingBadge = document.getElementById('ip-forwarding-badge');
+                    if (data.metrics.ip_forwarding) {
+                        ipForwardingBadge.className = 'badge bg-success';
+                        ipForwardingBadge.textContent = 'Enabled';
+                    } else {
+                        ipForwardingBadge.className = 'badge bg-danger';
+                        ipForwardingBadge.textContent = 'Disabled';
+                    }
+                }
+            })
+            .catch(error => console.error('Error fetching metrics:', error));
+        
+        // Fetch client statistics
+        fetch('/api/clients')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const activeClients = data.clients.filter(client => client.status === 'active').length;
+                    document.getElementById('active-clients-count').textContent = activeClients;
+                    document.getElementById('total-clients-count').textContent = data.clients.length;
+                }
+            })
+            .catch(error => console.error('Error fetching clients:', error));
+            
+        // Fetch system load
+        fetch('/api/system-load')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById('system-load').textContent = `${data.load.cpu.toFixed(1)}%`;
+                }
+            })
+            .catch(error => console.error('Error fetching system load:', error));
+            
+        // Fetch recent activity
+        fetch('/api/recent-activity')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const activityTable = document.getElementById('recent-activity');
+                    activityTable.innerHTML = '';
+                    
+                    if (data.activity.length === 0) {
+                        activityTable.innerHTML = '<tr><td colspan="4" class="text-center">No recent activity</td></tr>';
+                        return;
+                    }
+                    
+                    data.activity.forEach(activity => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${activity.client}</td>
+                            <td>${activity.action}</td>
+                            <td>
+                                <span class="badge ${activity.status === 'success' ? 'bg-success' : 'bg-danger'}">
+                                    ${activity.status}
+                                </span>
+                            </td>
+                            <td>${new Date(activity.time).toLocaleString()}</td>
+                        `;
+                        activityTable.appendChild(row);
+                    });
+                }
+            })
+            .catch(error => console.error('Error fetching recent activity:', error));
+    }
+    
+    // Update metrics every 5 seconds
+    setInterval(updateDashboardMetrics, 5000);
+    
+    // Initial update
+    updateDashboardMetrics();
+</script>
 {% endblock %} 
