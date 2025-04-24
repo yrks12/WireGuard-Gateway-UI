@@ -1,12 +1,43 @@
 import os
 import subprocess
 import re
-from typing import Dict, Optional, Tuple
+import ipaddress
+from typing import Dict, Optional, Tuple, List
 from flask import current_app
 
 class WireGuardService:
     """Service for managing WireGuard VPN operations."""
     
+    @staticmethod
+    def _validate_subnet(subnet: str) -> Tuple[bool, Optional[str]]:
+        """
+        Validate a single subnet in CIDR notation.
+        Returns: (is_valid, error_message)
+        """
+        try:
+            network = ipaddress.ip_network(subnet, strict=True)
+            
+            # Check for invalid subnets
+            if network.is_loopback:
+                return False, f"Loopback subnet {subnet} is not allowed"
+            if network.is_multicast:
+                return False, f"Multicast subnet {subnet} is not allowed"
+            if network.is_private and network.prefixlen < 16:
+                return False, f"Private subnet {subnet} is too large. Please use a more specific subnet"
+            
+            return True, None
+        except ValueError as e:
+            return False, f"Invalid subnet format: {str(e)}"
+
+    @staticmethod
+    def _parse_allowed_ips(allowed_ips_str: str) -> List[str]:
+        """
+        Parse AllowedIPs string into list of subnets.
+        Handles comma-separated and space-separated values.
+        """
+        # Split by comma or space, then strip whitespace
+        return [ip.strip() for ip in re.split(r'[,\s]+', allowed_ips_str) if ip.strip()]
+
     @staticmethod
     def validate_config(config_content: str) -> Tuple[bool, Optional[str], Optional[Dict]]:
         """
@@ -21,7 +52,8 @@ class WireGuardService:
             
         config_data = {
             'public_key': None,
-            'allowed_ips': None
+            'allowed_ips': None,
+            'subnets': []
         }
         
         # Extract PublicKey from [Peer] section
@@ -35,11 +67,27 @@ class WireGuardService:
         if not allowed_ips_match:
             return False, "Missing AllowedIPs in config", None
         
-        allowed_ips = allowed_ips_match.group(1).strip()
-        if allowed_ips == '0.0.0.0/0':
-            return False, "AllowedIPs cannot be 0.0.0.0/0. Please specify a subnet.", None
+        allowed_ips_str = allowed_ips_match.group(1).strip()
+        subnets = WireGuardService._parse_allowed_ips(allowed_ips_str)
         
-        config_data['allowed_ips'] = allowed_ips
+        # Check for 0.0.0.0/0
+        if '0.0.0.0/0' in subnets:
+            return False, (
+                "AllowedIPs cannot be 0.0.0.0/0. "
+                "Please specify the specific subnet(s) you want to access. "
+                "For example: 192.168.1.0/24"
+            ), None
+        
+        # Validate each subnet
+        valid_subnets = []
+        for subnet in subnets:
+            is_valid, error_msg = WireGuardService._validate_subnet(subnet)
+            if not is_valid:
+                return False, error_msg, None
+            valid_subnets.append(subnet)
+        
+        config_data['allowed_ips'] = allowed_ips_str
+        config_data['subnets'] = valid_subnets
         return True, None, config_data
 
     @staticmethod
