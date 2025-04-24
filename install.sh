@@ -9,6 +9,7 @@ fi
 
 # Parse arguments
 SKIP_PIP=false
+SKIP_DEPENDENCIES=false
 for arg in "$@"
 do
     case $arg in
@@ -16,8 +17,43 @@ do
         SKIP_PIP=true
         shift
         ;;
+        --skip-dependencies)
+        SKIP_DEPENDENCIES=true
+        shift
+        ;;
+        --skip-all)
+        SKIP_PIP=true
+        SKIP_DEPENDENCIES=true
+        shift
+        ;;
     esac
 done
+
+# Install required packages if not skipped
+if [ "$SKIP_DEPENDENCIES" = false ]; then
+    echo "Installing required packages..."
+    apt-get update
+    apt-get install -y \
+        wireguard \
+        wireguard-tools \
+        resolvconf \
+        iptables-persistent \
+        netfilter-persistent \
+        python3 \
+        python3-venv \
+        python3-pip \
+        net-tools \
+        iproute2 \
+        dnsutils \
+        iputils-ping
+
+    # Enable IP forwarding
+    echo "Enabling IP forwarding..."
+    echo "net.ipv4.ip_forward=1" | tee -a /etc/sysctl.conf
+    sysctl -p
+else
+    echo "Skipping system dependencies installation as requested"
+fi
 
 # Define directories
 INSTALL_DIR="/opt/wireguard-gateway"

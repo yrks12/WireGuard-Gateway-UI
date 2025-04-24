@@ -17,6 +17,49 @@ A web application for managing WireGuard VPN tunnels, automating NAT/forwarding 
 - Storage: Local FS for .conf files; SQLite/JSON for metadata
 - System Integration: subprocess module for wg-quick and iptables
 
+## Installation
+
+### System Requirements
+- Ubuntu/Debian-based system
+- Root/sudo access
+- Python 3.8 or higher
+
+### Installation Options
+
+1. **Full Installation** (recommended):
+   ```bash
+   sudo ./install.sh
+   ```
+
+2. **Skip Python Package Installation**:
+   ```bash
+   sudo ./install.sh --skip-pip
+   ```
+
+3. **Skip System Dependencies**:
+   ```bash
+   sudo ./install.sh --skip-dependencies
+   ```
+
+4. **Skip Both Python and System Dependencies**:
+   ```bash
+   sudo ./install.sh --skip-all
+   ```
+
+The installation script will:
+- Install required system packages (unless skipped):
+  - WireGuard and tools
+  - resolvconf
+  - iptables-persistent
+  - netfilter-persistent
+  - Python and related tools
+  - Network utilities
+- Enable IP forwarding
+- Set up the application directory structure
+- Configure necessary permissions
+- Create the virtual environment
+- Install Python dependencies (unless skipped)
+
 ## Development Setup
 
 1. Clone the repository
