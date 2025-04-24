@@ -10,4 +10,5 @@ psutil==5.9.8  # For system metrics
 SQLAlchemy==1.4.49  # For database operations
 flask_sqlalchemy==2.5.1  # For Flask-SQLAlchemy integration
 marshmallow==3.21.0  # For schema validation
-Jinja2==3.1.3  # For HTML templates 
+Jinja2==3.1.3  # For HTML templates
+netifaces==0.11.0 

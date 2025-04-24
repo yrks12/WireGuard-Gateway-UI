@@ -9,6 +9,7 @@ from app.services.wireguard import WireGuardService
 from app.services.pending_configs import PendingConfigsService
 from app.services.ip_forwarding import IPForwardingService
 from datetime import datetime
+from app.services.iptables_manager import IptablesManager
 
 bp = Blueprint('main', __name__)
 pending_configs = None
@@ -345,6 +346,88 @@ def set_ip_forwarding():
         return jsonify({
             'status': 'success',
             'message': f"IP forwarding {'enabled' if data['enable'] else 'disabled'} successfully"
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/clients/<client_id>/setup-forwarding', methods=['POST'])
+def setup_forwarding(client_id):
+    """Set up IP forwarding and iptables rules for a client."""
+    client = current_app.config_storage.get_client(client_id)
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+    
+    try:
+        # Get interface name from config path
+        interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+        
+        # Set up forwarding rules
+        success, error = IptablesManager.setup_forwarding(interface_name)
+        if not success:
+            return jsonify({
+                'error': 'Failed to set up forwarding',
+                'details': error
+            }), 500
+        
+        # Get router command
+        router_cmd = IptablesManager.get_router_command(interface_name, client['subnet'])
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Forwarding rules set up successfully',
+            'router_command': router_cmd
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/clients/<client_id>/cleanup-forwarding', methods=['POST'])
+def cleanup_forwarding(client_id):
+    """Remove IP forwarding and iptables rules for a client."""
+    client = current_app.config_storage.get_client(client_id)
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+    
+    try:
+        # Get interface name from config path
+        interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+        
+        # Clean up forwarding rules
+        success, error = IptablesManager.cleanup_forwarding(interface_name)
+        if not success:
+            return jsonify({
+                'error': 'Failed to clean up forwarding',
+                'details': error
+            }), 500
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Forwarding rules cleaned up successfully'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/clients/<client_id>/forwarding-rules', methods=['GET'])
+def get_forwarding_rules(client_id):
+    """Get the current iptables rules for a client."""
+    client = current_app.config_storage.get_client(client_id)
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+    
+    try:
+        # Get interface name from config path
+        interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+        
+        # Get forwarding rules
+        success, rules, error = IptablesManager.get_forwarding_rules(interface_name)
+        if not success:
+            return jsonify({
+                'error': 'Failed to get forwarding rules',
+                'details': error
+            }), 500
+        
+        return jsonify({
+            'status': 'success',
+            'rules': rules
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500 

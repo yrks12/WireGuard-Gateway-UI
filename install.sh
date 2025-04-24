@@ -111,6 +111,12 @@ wireguard ALL=(ALL) NOPASSWD: /usr/sbin/sysctl -p
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/sysctl.conf
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/resolvconf -a *
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/resolvconf -d *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -t nat -A POSTROUTING *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -A FORWARD *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -t nat -D POSTROUTING *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -D FORWARD *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -t nat -L POSTROUTING -v -n
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/iptables -L FORWARD -v -n
 EOF
 chmod 440 /etc/sudoers.d/wireguard
 
