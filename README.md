@@ -40,16 +40,6 @@ A web application for managing WireGuard VPN tunnels, automating NAT/forwarding 
 4. Merge release branches to both `main` and `develop`
 5. Hotfixes should branch from `main` and merge back to both `main` and `develop`
 
-## CI/CD Pipeline
-
-The project uses GitHub Actions for continuous integration and deployment:
-
-- Linting checks on every push
-- Unit tests on every push
-- Build verification on every push
-- Automated deployment to staging on merge to develop
-- Automated deployment to production on merge to main
-
 ## License
 
 [License details to be added] 
