@@ -675,3 +675,21 @@ def check_handshake(client_id):
             'error': str(e),
             'last_handshake': None
         }), 500
+
+@bp.route('/api/ip-forwarding', methods=['GET'])
+@login_required
+def get_ip_forwarding_status():
+    """Get the current IP forwarding status."""
+    try:
+        ip_forwarding = IPForwardingService()
+        enabled = ip_forwarding.is_enabled()
+        return jsonify({
+            'status': 'success',
+            'enabled': enabled
+        })
+    except Exception as e:
+        logger.error(f"Error checking IP forwarding status: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
