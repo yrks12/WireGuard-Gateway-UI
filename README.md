@@ -9,6 +9,7 @@ A web application for managing WireGuard VPN tunnels, automating NAT/forwarding 
 - Automate NAT and forwarding rules
 - Generate router route instructions
 - Monitor tunnel health and gateway performance
+- Secure authentication system
 
 ## Tech Stack
 
@@ -16,6 +17,7 @@ A web application for managing WireGuard VPN tunnels, automating NAT/forwarding 
 - Frontend: HTML, CSS, JavaScript
 - Storage: Local FS for .conf files; SQLite/JSON for metadata
 - System Integration: subprocess module for wg-quick and iptables
+- Authentication: Flask-Login with password hashing
 
 ## Installation
 
@@ -59,6 +61,34 @@ The installation script will:
 - Configure necessary permissions
 - Create the virtual environment
 - Install Python dependencies (unless skipped)
+- Initialize the database and create default admin user
+
+## Authentication
+
+The application includes a secure authentication system with the following features:
+
+### Default Credentials
+- **Username**: admin
+- **Password**: admin123
+
+### Security Features
+- Password hashing using Werkzeug
+- Forced password change on first login
+- Session management
+- Login attempt rate limiting
+- Password change functionality
+
+### First Login
+1. Log in using the default credentials
+2. You will be automatically redirected to the password change page
+3. Set a new secure password (minimum 8 characters)
+4. After changing the password, you'll have full access to the system
+
+### Password Management
+- Users can change their password at any time
+- Password changes require current password verification
+- New passwords must be at least 8 characters long
+- Password changes are immediately effective
 
 ## Development Setup
 

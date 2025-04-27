@@ -1,4 +1,4 @@
-Flask==2.3.3
+Flask==3.0.0
 Flask-RESTful==0.3.10
 python-dotenv==1.0.1
 pytest==8.0.2
@@ -7,11 +7,11 @@ black==24.2.0
 flake8==7.0.0
 requests==2.31.0
 psutil==5.9.8  # For system metrics
-SQLAlchemy==1.4.49  # For database operations
-flask_sqlalchemy==2.5.1  # For Flask-SQLAlchemy integration
+SQLAlchemy==2.0.25  # For database operations
+flask_sqlalchemy==3.1.1  # For Flask-SQLAlchemy integration
 marshmallow==3.21.0  # For schema validation
 Jinja2==3.1.3  # For HTML templates
 netifaces==0.11.0
 Flask-Login==0.6.3  # For user session management
-Flask-Security==4.1.5  # For authentication and authorization
-Werkzeug==2.3.7  # For password hashing and security 
+Flask-Security==5.6.1  # For authentication and authorization
+Werkzeug==3.0.1  # For password hashing and security 
