@@ -745,3 +745,26 @@ def email_settings():
             flash('Failed to update email settings', 'error')
     
     return render_template('email_settings.html', form=form)
+
+@bp.route('/email-settings/test', methods=['POST'])
+@login_required
+def test_email_settings():
+    """Send a test email to verify SMTP settings."""
+    try:
+        # Send test email
+        success = EmailService.send_alert(
+            subject="Test Alert",
+            message="This is a test email to verify your SMTP settings are working correctly.",
+            is_html=False
+        )
+        
+        if success:
+            flash('Test email sent successfully!', 'success')
+        else:
+            flash('Failed to send test email. Please check your SMTP settings.', 'error')
+            
+    except Exception as e:
+        logger.error(f"Error sending test email: {e}")
+        flash(f'Error sending test email: {str(e)}', 'error')
+    
+    return redirect(url_for('main.email_settings'))

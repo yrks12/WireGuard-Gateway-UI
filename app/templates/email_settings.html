@@ -80,8 +80,9 @@
                             {% endif %}
                         </div>
                         
-                        <div class="d-grid">
+                        <div class="d-grid gap-2">
                             <button type="submit" class="btn btn-primary">Save Settings</button>
+                            <button type="button" class="btn btn-secondary" onclick="sendTestEmail()">Send Test Email</button>
                         </div>
                     </form>
                 </div>
@@ -89,4 +90,22 @@
         </div>
     </div>
 </div>
+
+{% block extra_js %}
+<script>
+function sendTestEmail() {
+    fetch('{{ url_for("main.test_email_settings") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ form.csrf_token._value() }}'
+        }
+    }).then(response => {
+        if (response.ok) {
+            window.location.reload();
+        }
+    });
+}
+</script>
+{% endblock %}
 {% endblock %} 
