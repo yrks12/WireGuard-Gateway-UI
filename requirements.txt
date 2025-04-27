@@ -7,7 +7,7 @@ black==24.2.0
 flake8==7.0.0
 requests==2.31.0
 psutil==5.9.8  # For system metrics
-SQLAlchemy==2.0.25  # For database operations
+SQLAlchemy==2.0.40  # For database operations
 flask_sqlalchemy==3.1.1  # For Flask-SQLAlchemy integration
 marshmallow==3.21.0  # For schema validation
 Jinja2==3.1.3  # For HTML templates
