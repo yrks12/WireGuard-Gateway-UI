@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, jsonify
+from flask_login import login_required
 import os
 import psutil
 import subprocess
@@ -57,16 +58,19 @@ def rate_limit(max_requests=5, time_window=60):
     return decorator
 
 @bp.route('/')
+@login_required
 def index():
     """Dashboard page showing active clients and system status."""
     return render_template('index.html')
 
 @bp.route('/clients')
+@login_required
 def clients():
     """Show clients page."""
     return render_template('clients.html')
 
 @bp.route('/clients/upload', methods=['POST'])
+@login_required
 @rate_limit(10, 60)  # 10 requests per minute
 def upload_config():
     if 'config' not in request.files:
@@ -139,6 +143,7 @@ def upload_config():
         return jsonify({'error': str(e)}), 400
 
 @bp.route('/clients/subnet', methods=['POST'])
+@login_required
 @rate_limit(max_requests=5, time_window=60)
 def submit_subnet():
     """Handle subnet submission for pending configs."""
@@ -173,6 +178,7 @@ def submit_subnet():
     })
 
 @bp.route('/clients/<client_id>', methods=['GET', 'DELETE'])
+@login_required
 def client(client_id):
     """Get or delete a client."""
     if request.method == 'DELETE':
@@ -208,6 +214,7 @@ def client(client_id):
             return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @bp.route('/clients/<client_id>/activate', methods=['POST'])
+@login_required
 def activate_client(client_id):
     """Activate a WireGuard client."""
     client = current_app.config_storage.get_client(client_id)
@@ -249,6 +256,7 @@ def activate_client(client_id):
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/clients/<client_id>/deactivate', methods=['POST'])
+@login_required
 def deactivate_client(client_id):
     """Deactivate a WireGuard client."""
     client = current_app.config_storage.get_client(client_id)
@@ -281,6 +289,7 @@ def deactivate_client(client_id):
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/clients/<client_id>/setup-forwarding', methods=['POST'])
+@login_required
 def setup_forwarding(client_id):
     """Set up IP forwarding and iptables rules for a client."""
     client = current_app.config_storage.get_client(client_id)
@@ -311,6 +320,7 @@ def setup_forwarding(client_id):
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/clients/<client_id>/cleanup-forwarding', methods=['POST'])
+@login_required
 def cleanup_forwarding(client_id):
     """Remove IP forwarding and iptables rules for a client."""
     client = current_app.config_storage.get_client(client_id)
@@ -337,6 +347,7 @@ def cleanup_forwarding(client_id):
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/clients/<client_id>/forwarding-rules', methods=['GET'])
+@login_required
 def get_forwarding_rules(client_id):
     """Get the current iptables rules for a client."""
     client = current_app.config_storage.get_client(client_id)
@@ -363,6 +374,7 @@ def get_forwarding_rules(client_id):
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/clients/<client_id>/test-connectivity', methods=['POST'])
+@login_required
 def test_client_connectivity(client_id):
     """Test connectivity to a client's subnet or a specific IP."""
     try:
@@ -419,6 +431,7 @@ def test_client_connectivity(client_id):
         }), 500
 
 @bp.route('/clients/<client_id>/route-command', methods=['GET'])
+@login_required
 def get_route_command(client_id):
     """Get the route command for a client's subnet."""
     try:
@@ -454,6 +467,7 @@ def get_route_command(client_id):
         }), 500
 
 @bp.route('/system/metrics', methods=['GET'])
+@login_required
 def get_system_metrics():
     """Get system-wide metrics (CPU, RAM, etc.)."""
     try:
@@ -477,7 +491,8 @@ def get_system_metrics():
             'error': str(e)
         }), 500
 
-@bp.route('/api/clients')
+@bp.route('/api/clients', methods=['GET'])
+@login_required
 def get_clients():
     """Get all clients as JSON."""
     try:
@@ -493,7 +508,8 @@ def get_clients():
             'error': str(e)
         }), 500
 
-@bp.route('/api/recent-activity')
+@bp.route('/api/recent-activity', methods=['GET'])
+@login_required
 def get_recent_activity():
     """Get recent activity for the dashboard."""
     try:
@@ -546,7 +562,8 @@ def get_recent_activity():
             'error': str(e)
         }), 500
 
-@bp.route('/api/system-load')
+@bp.route('/api/system-load', methods=['GET'])
+@login_required
 def get_system_load():
     """Get system load for the dashboard."""
     try:
@@ -577,6 +594,7 @@ def get_system_load():
         }), 500
 
 @bp.route('/clients/<client_id>/test', methods=['GET'])
+@login_required
 def client_testing(client_id):
     """Show client testing page."""
     client = current_app.config_storage.get_client(client_id)
@@ -587,6 +605,7 @@ def client_testing(client_id):
     return render_template('client_testing.html', client_id=client_id, client=client)
 
 @bp.route('/clients/<client_id>/handshake', methods=['GET'])
+@login_required
 def check_handshake(client_id):
     """Check the last handshake time for a client."""
     try:

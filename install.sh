@@ -10,6 +10,9 @@ fi
 # Parse arguments
 SKIP_PIP=false
 SKIP_DEPENDENCIES=false
+DEFAULT_USERNAME="admin"
+DEFAULT_PASSWORD="admin123"  # This will be forced to change on first login
+
 for arg in "$@"
 do
     case $arg in
@@ -182,10 +185,23 @@ cd $INSTALL_DIR
 source venv/bin/activate
 python -c "
 from app import create_app
+from app.models.user import User, db
+from werkzeug.security import generate_password_hash
+
 app = create_app()
 with app.app_context():
-    from app import db
+    # Create database tables
     db.create_all()
+    
+    # Create default admin user if it doesn't exist
+    if not User.query.filter_by(username='$DEFAULT_USERNAME').first():
+        admin = User(
+            username='$DEFAULT_USERNAME',
+            password=generate_password_hash('$DEFAULT_PASSWORD'),
+            must_change_password=True
+        )
+        db.session.add(admin)
+        db.session.commit()
 "
 DB_INIT_EOF
 
@@ -229,4 +245,8 @@ systemctl start wireguard-gateway
 
 echo "Installation complete!"
 echo "The WireGuard Gateway service has been installed and started."
-echo "You can manage it using: systemctl status/start/stop/restart wireguard-gateway"
+echo "Default credentials:"
+echo "Username: $DEFAULT_USERNAME"
+echo "Password: $DEFAULT_PASSWORD"
+echo "Note: You will be required to change the password on first login."
+echo "You can manage the service using: systemctl status/start/stop/restart wireguard-gateway"

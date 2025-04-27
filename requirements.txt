@@ -11,4 +11,7 @@ SQLAlchemy==1.4.49  # For database operations
 flask_sqlalchemy==2.5.1  # For Flask-SQLAlchemy integration
 marshmallow==3.21.0  # For schema validation
 Jinja2==3.1.3  # For HTML templates
-netifaces==0.11.0 
+netifaces==0.11.0
+Flask-Login==0.6.3  # For user session management
+Flask-Security==4.1.5  # For authentication and authorization
+Werkzeug==2.3.7  # For password hashing and security 

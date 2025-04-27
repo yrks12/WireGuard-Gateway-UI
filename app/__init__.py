@@ -1,17 +1,24 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager
 from dotenv import load_dotenv
 import os
 import logging
 from logging.handlers import RotatingFileHandler
 from app.services.pending_configs import PendingConfigsService
 from app.services.config_storage import ConfigStorageService
+from app.models.user import User, db
 
 # Load environment variables
 load_dotenv()
 
 # Initialize Flask extensions
 db = SQLAlchemy()
+login_manager = LoginManager()
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
@@ -32,6 +39,8 @@ def create_app(test_config=None):
     
     # Initialize extensions
     db.init_app(app)
+    login_manager.init_app(app)
+    login_manager.login_view = 'auth.login'
 
     # Initialize services
     with app.app_context():
@@ -42,10 +51,14 @@ def create_app(test_config=None):
         # Initialize config storage service
         db_path = os.path.join(app.instance_path, 'configs.db')
         app.config_storage = ConfigStorageService(configs_dir, db_path)
+        
+        # Create database tables
+        db.create_all()
 
     # Register blueprints
-    from app.routes import main
+    from app.routes import main, auth
     app.register_blueprint(main.bp)
+    app.register_blueprint(auth.bp)
 
     # Register error handlers
     from app.error_handlers import register_error_handlers
@@ -65,9 +78,5 @@ def create_app(test_config=None):
         app.logger.addHandler(file_handler)
         app.logger.setLevel(logging.INFO)
         app.logger.info('WireGuard Gateway UI startup')
-
-    # Create database tables
-    with app.app_context():
-        db.create_all()
 
     return app 
