@@ -15,10 +15,6 @@ load_dotenv()
 db = SQLAlchemy()
 login_manager = LoginManager()
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
     
@@ -40,6 +36,13 @@ def create_app(test_config=None):
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
+
+    # Import User model
+    from app.models.user import User
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        return User.query.get(int(user_id))
 
     # Register blueprints
     from app.routes import main, auth
@@ -76,7 +79,6 @@ def create_app(test_config=None):
         app.config_storage = ConfigStorageService(configs_dir, db_path)
         
         # Create database tables
-        from app.models.user import User
         db.create_all()
 
     return app 
