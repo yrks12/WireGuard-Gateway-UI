@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="container mt-5">
+    <div id="alert-area"></div>
     <div class="row mb-4">
         <div class="col-12">
             <div class="card">
@@ -90,6 +91,9 @@
 {% block extra_js %}
 <script>
 function formatTimeAgo(timestamp) {
+    if (!timestamp || isNaN(new Date(timestamp).getTime())) {
+        return 'Never';
+    }
     const now = new Date();
     const date = new Date(timestamp);
     const seconds = Math.floor((now - date) / 1000);
@@ -110,9 +114,9 @@ function updateConnectionStatus() {
             for (const [peer, status] of Object.entries(data.status)) {
                 const row = document.createElement('tr');
                 
-                // Client name (first 8 chars of peer key)
+                // Client name
                 const clientCell = document.createElement('td');
-                clientCell.textContent = peer.substring(0, 8) + '...';
+                clientCell.textContent = status.name || peer;
                 
                 // Status
                 const statusCell = document.createElement('td');
@@ -123,7 +127,7 @@ function updateConnectionStatus() {
                 
                 // Last handshake
                 const handshakeCell = document.createElement('td');
-                handshakeCell.textContent = formatTimeAgo(new Date(status.last_handshake));
+                handshakeCell.textContent = formatTimeAgo(status.last_handshake);
                 
                 // Last alert
                 const alertCell = document.createElement('td');
@@ -158,7 +162,18 @@ function testMonitoring() {
                 <strong>Success!</strong> Connection checks triggered for ${data.results.length} clients.
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
-            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+            const container = document.querySelector('.container');
+            const alertArea = document.getElementById('alert-area');
+            if (alertArea) {
+                alertArea.appendChild(alertDiv);
+            } else {
+                const row = document.querySelector('.row');
+                if (container && row && row.parentNode === container) {
+                    container.insertBefore(alertDiv, row);
+                } else if (container) {
+                    container.appendChild(alertDiv);
+                }
+            }
             
             // Update status after a short delay
             setTimeout(updateConnectionStatus, 2000);
@@ -170,7 +185,18 @@ function testMonitoring() {
                 <strong>Error!</strong> ${data.message}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
-            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+            const container = document.querySelector('.container');
+            const alertArea = document.getElementById('alert-area');
+            if (alertArea) {
+                alertArea.appendChild(alertDiv);
+            } else {
+                const row = document.querySelector('.row');
+                if (container && row && row.parentNode === container) {
+                    container.insertBefore(alertDiv, row);
+                } else if (container) {
+                    container.appendChild(alertDiv);
+                }
+            }
         }
     })
     .catch(error => {
@@ -181,7 +207,18 @@ function testMonitoring() {
             <strong>Error!</strong> Failed to trigger connection checks.
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
-        document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+        const container = document.querySelector('.container');
+        const alertArea = document.getElementById('alert-area');
+        if (alertArea) {
+            alertArea.appendChild(alertDiv);
+        } else {
+            const row = document.querySelector('.row');
+            if (container && row && row.parentNode === container) {
+                container.insertBefore(alertDiv, row);
+            } else if (container) {
+                container.appendChild(alertDiv);
+            }
+        }
     });
 }
 

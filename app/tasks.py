@@ -2,57 +2,47 @@ import threading
 import time
 import logging
 from flask import current_app
-from app.services.wireguard_monitor import WireGuardMonitor
+from app.services.wireguard import WireGuardService
+from app.models.client import Client
+from app.database import db
 
 logger = logging.getLogger(__name__)
 
-class MonitorTask:
-    """Background task for monitoring WireGuard interfaces."""
-    
-    def __init__(self):
-        self._running = False
-        self._thread = None
-        self._check_interval = 60  # Check every minute
-    
-    def start(self):
-        """Start the monitoring task."""
-        if self._running:
-            return
-            
-        self._running = True
-        self._thread = threading.Thread(target=self._run)
-        self._thread.daemon = True
-        self._thread.start()
-        logger.info("Started WireGuard monitoring task")
-    
-    def stop(self):
-        """Stop the monitoring task."""
-        self._running = False
-        if self._thread:
-            self._thread.join()
-        logger.info("Stopped WireGuard monitoring task")
-    
-    def _run(self):
-        """Main monitoring loop."""
-        while self._running:
-            try:
-                # Get all active clients
-                clients = current_app.config_storage.list_clients()
+def monitor_wireguard(app):
+    """Monitor WireGuard peers and update their status."""
+    while True:
+        try:
+            with app.app_context():
+                # Get all clients from database
+                clients = Client.query.all()
                 
-                # Check each active client
+                # Update status for each client
                 for client in clients:
-                    if client.get('status') == 'active':
-                        interface = client.get('interface')
-                        client_name = client.get('name', 'Unknown')
+                    try:
+                        status = WireGuardService.get_peer_status(client.public_key)
+                        if status:
+                            client.status = status['status']
+                            client.last_handshake = status['last_handshake']
+                            db.session.add(client)
                         
-                        if interface:
-                            WireGuardMonitor.check_and_alert(interface, client_name)
+                    except Exception as e:
+                        logging.error(f"Error updating status for client {client.name}: {str(e)}")
                 
-            except Exception as e:
-                logger.error(f"Error in monitoring task: {e}")
+                # Commit all changes
+                db.session.commit()
+                
+        except Exception as e:
+            logging.error(f"Error in monitoring task: {str(e)}")
             
-            # Wait for next check
-            time.sleep(self._check_interval)
+        # Sleep for 30 seconds before next update
+        time.sleep(30)
 
-# Global monitor task instance
-monitor_task = MonitorTask() 
+def start(app):
+    """Start the WireGuard monitoring task in a background thread."""
+    global monitor_task
+    monitor_task = threading.Thread(target=monitor_wireguard, args=(app,), daemon=True)
+    monitor_task.start()
+    logging.info("Started WireGuard monitoring task")
+
+# Global monitor thread
+monitor_task = None 

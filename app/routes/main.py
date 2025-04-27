@@ -708,15 +708,19 @@ def email_settings():
         # Load existing settings
         settings = EmailSettings.get_settings()
         if settings:
+            logger.info(f"Loading existing email settings: host={settings.smtp_host}, port={settings.smtp_port}, from={settings.smtp_from}")
             form.smtp_host.data = settings.smtp_host
             form.smtp_port.data = settings.smtp_port
             form.smtp_username.data = settings.smtp_username
             form.smtp_from.data = settings.smtp_from
             form.smtp_use_tls.data = settings.smtp_use_tls
             form.alert_recipients.data = settings.alert_recipients
+        else:
+            logger.info("No existing email settings found")
     
     if form.validate_on_submit():
         try:
+            logger.info("Saving new email settings")
             # Update settings
             EmailSettings.update_settings(
                 smtp_host=form.smtp_host.data,
@@ -739,6 +743,7 @@ def email_settings():
                 'ALERT_RECIPIENTS': [email.strip() for email in form.alert_recipients.data.split(',')]
             })
             
+            logger.info("Email settings updated successfully")
             flash('Email settings updated successfully', 'success')
             return redirect(url_for('main.email_settings'))
             
@@ -753,6 +758,7 @@ def email_settings():
 def test_email_settings():
     """Send a test email to verify SMTP settings."""
     try:
+        logger.info("Attempting to send test email")
         # Send test email
         success = EmailService.send_alert(
             subject="Test Alert",
@@ -761,8 +767,10 @@ def test_email_settings():
         )
         
         if success:
+            logger.info("Test email sent successfully")
             flash('Test email sent successfully!', 'success')
         else:
+            logger.error("Failed to send test email")
             flash('Failed to send test email. Please check your SMTP settings.', 'error')
             
     except Exception as e:
@@ -781,9 +789,17 @@ def monitoring():
 @bp.route('/api/monitoring/status')
 @login_required
 def get_monitoring_status():
-    """Get current connection status for all peers."""
+    """Get current connection status for all clients from the database."""
     try:
-        status = WireGuardMonitor.get_connection_status()
+        clients = current_app.config_storage.list_clients()
+        status = {}
+        for client in clients:
+            status[client['id']] = {
+                'name': client['name'],
+                'connected': client['status'] == 'active',
+                'last_handshake': client['last_handshake'],
+                'last_alert': None  # You can enhance this to fetch from alert history if needed
+            }
         return jsonify({
             'status': 'success',
             'data': {
