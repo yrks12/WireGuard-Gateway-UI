@@ -1,5 +1,4 @@
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from dotenv import load_dotenv
 import os
@@ -7,13 +6,13 @@ import logging
 from logging.handlers import RotatingFileHandler
 from app.services.pending_configs import PendingConfigsService
 from app.services.config_storage import ConfigStorageService
+from app.database import db
 from app.tasks import monitor_task
 
 # Load environment variables
 load_dotenv()
 
 # Initialize Flask extensions
-db = SQLAlchemy()
 login_manager = LoginManager()
 
 def create_app(test_config=None):
@@ -34,9 +33,9 @@ def create_app(test_config=None):
     app.config['WIREGUARD_CONFIG_DIR'] = configs_dir
     
     # Initialize extensions
-    db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
+    db.init_app(app)
 
     # Import User model
     from app.models.user import User
@@ -84,6 +83,7 @@ def create_app(test_config=None):
         db.create_all()
 
         # Initialize monitoring task
-        monitor_task.start()
+        from app.tasks import start
+        start(app)
 
     return app 

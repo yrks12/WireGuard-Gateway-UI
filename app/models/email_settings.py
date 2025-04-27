@@ -1,5 +1,5 @@
-from app import db
 from datetime import datetime
+from app.database import db
 
 class EmailSettings(db.Model):
     """Model for storing email alert settings."""
