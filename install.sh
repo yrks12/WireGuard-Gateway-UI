@@ -1,9 +1,37 @@
 #!/bin/bash
 set -e
 
+# Define colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+BOLD='\033[1m'
+
+# Function to print section headers
+print_header() {
+    echo -e "\n${BLUE}${BOLD}=== $1 ===${NC}\n"
+}
+
+# Function to print status messages
+print_status() {
+    echo -e "${GREEN}[✓]${NC} $1"
+}
+
+# Function to print warning messages
+print_warning() {
+    echo -e "${YELLOW}[!]${NC} $1"
+}
+
+# Function to print error messages
+print_error() {
+    echo -e "${RED}[✗]${NC} $1"
+}
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
-    echo "Please run as root"
+    print_error "Please run as root"
     exit 1
 fi
 
@@ -18,24 +46,33 @@ do
     case $arg in
         --skip-pip)
         SKIP_PIP=true
+        print_warning "Skipping pip installation"
         shift
         ;;
         --skip-dependencies)
         SKIP_DEPENDENCIES=true
+        print_warning "Skipping system dependencies installation"
         shift
         ;;
         --skip-all)
         SKIP_PIP=true
         SKIP_DEPENDENCIES=true
+        print_warning "Skipping all installations"
         shift
         ;;
     esac
 done
 
+print_header "WireGuard Gateway Installation"
+print_status "Starting installation process..."
+
 # Install required packages if not skipped
 if [ "$SKIP_DEPENDENCIES" = false ]; then
-    echo "Installing required packages..."
+    print_header "Installing System Dependencies"
+    print_status "Updating package lists..."
     apt-get update
+    
+    print_status "Installing required packages..."
     apt-get install -y \
         wireguard \
         wireguard-tools \
@@ -45,17 +82,17 @@ if [ "$SKIP_DEPENDENCIES" = false ]; then
         python3 \
         python3-venv \
         python3-pip \
+        python3-dev \
         net-tools \
         iproute2 \
         dnsutils \
         iputils-ping
 
-    # Enable IP forwarding
-    echo "Enabling IP forwarding..."
+    print_status "Enabling IP forwarding..."
     echo "net.ipv4.ip_forward=1" | tee -a /etc/sysctl.conf
     sysctl -p
 else
-    echo "Skipping system dependencies installation as requested"
+    print_warning "Skipping system dependencies installation as requested"
 fi
 
 # Define directories
@@ -69,49 +106,55 @@ LOG_FILE="$LOG_DIR/wireguard.log"
 DB_FILE="$DB_DIR/wireguard.db"
 
 # Create directories
-echo "Creating installation directories..."
+print_header "Creating Installation Directories"
+print_status "Setting up directory structure..."
 mkdir -p $INSTALL_DIR
 mkdir -p $INSTANCE_DIR
 mkdir -p $CONFIGS_DIR
 mkdir -p $PENDING_DIR
 mkdir -p $DB_DIR
 mkdir -p $LOG_DIR
-mkdir -p /etc/wireguard  # Create wireguard config directory
+mkdir -p /etc/wireguard
 
-# Create log file with proper permissions
+print_status "Setting up log file..."
 touch $LOG_FILE
-chmod 666 $LOG_FILE  # Allow read/write for all users
+chmod 666 $LOG_FILE
 
-# Create database file with proper permissions
-rm -f $DB_FILE  # Remove existing database if any
+print_status "Setting up database file..."
+rm -f $DB_FILE
 touch $DB_FILE
-chmod 666 $DB_FILE  # Allow read/write for all users
+chmod 666 $DB_FILE
 
-# Set permissions for wireguard directory
+print_status "Configuring WireGuard directory permissions..."
 chown wireguard:wireguard /etc/wireguard
-chmod 750 /etc/wireguard  # Allow wireguard group to read and execute
+chmod 750 /etc/wireguard
 
 # Copy files
-echo "Copying application files..."
+print_header "Installing Application Files"
+print_status "Copying application files to $INSTALL_DIR..."
 cp -r app $INSTALL_DIR/
 cp requirements.txt $INSTALL_DIR/
 cp run.py $INSTALL_DIR/
 
 # Create virtual environment and install dependencies
-echo "Setting up Python virtual environment..."
+print_header "Setting Up Python Environment"
+print_status "Creating Python virtual environment..."
 cd $INSTALL_DIR
 python3 -m venv venv
 
 if [ "$SKIP_PIP" = false ]; then
-    echo "Installing Python dependencies..."
+    print_status "Installing Python dependencies..."
     source venv/bin/activate
+    pip install --upgrade pip
+    pip install setuptools  # Add setuptools for pkg_resources
     pip install -r requirements.txt
 else
-    echo "Skipping pip install as requested"
+    print_warning "Skipping pip install as requested"
 fi
 
 # Create run script
-echo "Creating run script..."
+print_header "Creating System Scripts"
+print_status "Creating run script..."
 cat > /usr/local/bin/wireguard-gateway << EOF
 #!/bin/bash
 export INSTANCE_PATH="$INSTANCE_DIR"
@@ -125,6 +168,7 @@ SCRIPT_EOF
 EOF
 
 # Create wireguard user and group if they don't exist
+print_status "Setting up WireGuard user and groups..."
 if ! getent group wireguard >/dev/null; then
     groupadd wireguard
 fi
@@ -136,10 +180,10 @@ fi
 # Add wireguard user and root to necessary groups
 usermod -a -G sudo wireguard
 usermod -a -G netdev wireguard
-usermod -a -G wireguard root  # Add root to wireguard group
+usermod -a -G wireguard root
 
 # Set up sudoers entry for wireguard user
-echo "Setting up sudoers entry..."
+print_status "Configuring sudo permissions..."
 cat > /etc/sudoers.d/wireguard << EOF
 # Allow the wireguard user to run wg-quick commands without password
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg-quick up *
@@ -164,31 +208,42 @@ EOF
 chmod 440 /etc/sudoers.d/wireguard
 
 # Set permissions
-echo "Setting permissions..."
+print_header "Setting Permissions"
+print_status "Configuring file permissions..."
 chmod +x /usr/local/bin/wireguard-gateway
 chmod -R 755 $INSTALL_DIR
-chmod -R 750 $CONFIGS_DIR  # Allow wireguard group to access configs
-chmod -R 750 $PENDING_DIR  # Allow wireguard group to access pending configs
+chmod -R 750 $CONFIGS_DIR
+chmod -R 750 $PENDING_DIR
 chmod -R 777 $DB_DIR
 chmod -R 777 $LOG_DIR
 
 # Set ownership
+print_status "Setting file ownership..."
 chown -R wireguard:wireguard $INSTALL_DIR
 chown -R wireguard:wireguard $INSTANCE_DIR
 chown -R wireguard:wireguard $DB_DIR
 chown -R wireguard:wireguard $LOG_DIR
 
 # Initialize database as wireguard user
-echo "Initializing database..."
+print_header "Initializing Database"
+print_status "Creating database tables and default admin user..."
 sudo -u wireguard /bin/bash <<DB_INIT_EOF
 cd $INSTALL_DIR
 source venv/bin/activate
 python -c "
-from app import create_app
-from app.models.user import User, db
+import os
+os.environ['INSTANCE_PATH'] = '$INSTANCE_DIR'
+os.environ['DATABASE_URL'] = 'sqlite:///$DB_FILE'
+os.environ['LOG_PATH'] = '$LOG_FILE'
+
+from app import create_app, db
+from app.models.user import User
 from werkzeug.security import generate_password_hash
 
+# Create the Flask app
 app = create_app()
+
+# Create the database tables and admin user within the app context
 with app.app_context():
     # Create database tables
     db.create_all()
@@ -210,12 +265,13 @@ chown wireguard:wireguard $DB_FILE
 chmod 666 $DB_FILE
 
 # Set up config file permissions
-echo "Setting up config file permissions..."
-find $CONFIGS_DIR -type f -name "*.conf" -exec chmod 640 {} \;  # Set config files to 640 (readable by group)
-find $PENDING_DIR -type f -name "*.conf" -exec chmod 640 {} \;  # Set pending config files to 640 (readable by group)
+print_status "Setting up config file permissions..."
+find $CONFIGS_DIR -type f -name "*.conf" -exec chmod 640 {} \;
+find $PENDING_DIR -type f -name "*.conf" -exec chmod 640 {} \;
 
 # Create systemd service
-echo "Creating systemd service..."
+print_header "Setting Up System Service"
+print_status "Creating systemd service file..."
 cat > /etc/systemd/system/wireguard-gateway.service << EOF
 [Unit]
 Description=WireGuard Gateway Service
@@ -238,15 +294,23 @@ WantedBy=multi-user.target
 EOF
 
 # Reload systemd and enable service
-echo "Enabling and starting WireGuard Gateway service..."
+print_status "Enabling and starting WireGuard Gateway service..."
 systemctl daemon-reload
 systemctl enable wireguard-gateway
 systemctl start wireguard-gateway
 
-echo "Installation complete!"
-echo "The WireGuard Gateway service has been installed and started."
-echo "Default credentials:"
-echo "Username: $DEFAULT_USERNAME"
-echo "Password: $DEFAULT_PASSWORD"
-echo "Note: You will be required to change the password on first login."
-echo "You can manage the service using: systemctl status/start/stop/restart wireguard-gateway"
+print_header "Installation Complete!"
+echo -e "${GREEN}${BOLD}WireGuard Gateway has been successfully installed!${NC}"
+echo -e "\n${BOLD}Service Information:${NC}"
+echo -e "  • Service Status: ${GREEN}Active${NC}"
+echo -e "  • Service Name: wireguard-gateway"
+echo -e "  • Installation Directory: $INSTALL_DIR"
+echo -e "\n${BOLD}Default Credentials:${NC}"
+echo -e "  • Username: ${YELLOW}$DEFAULT_USERNAME${NC}"
+echo -e "  • Password: ${YELLOW}$DEFAULT_PASSWORD${NC}"
+echo -e "  • Note: You will be required to change the password on first login"
+echo -e "\n${BOLD}Service Management:${NC}"
+echo -e "  • Check status: ${BLUE}systemctl status wireguard-gateway${NC}"
+echo -e "  • Start service: ${BLUE}systemctl start wireguard-gateway${NC}"
+echo -e "  • Stop service: ${BLUE}systemctl stop wireguard-gateway${NC}"
+echo -e "  • Restart service: ${BLUE}systemctl restart wireguard-gateway${NC}"
