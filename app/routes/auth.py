@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from app.models.user import User, db
 from app.forms import LoginForm, ChangePasswordForm, CreateUserForm
@@ -84,4 +84,48 @@ def change_password():
 def logout():
     logout_user()
     flash('You have been logged out.', 'success')
-    return redirect(url_for('auth.login')) 
+    return redirect(url_for('auth.login'))
+
+@bp.route('/users/<int:user_id>/reset-password', methods=['POST'])
+@login_required
+def reset_user_password(user_id):
+    """Reset a user's password to a default value."""
+    user = User.query.get_or_404(user_id)
+    
+    # Generate a random password
+    import secrets
+    import string
+    alphabet = string.ascii_letters + string.digits
+    new_password = ''.join(secrets.choice(alphabet) for i in range(12))
+    
+    # Update user's password
+    user.password = generate_password_hash(new_password)
+    user.must_change_password = True
+    db.session.commit()
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'Password reset to: {new_password}'
+    })
+
+@bp.route('/users/<int:user_id>', methods=['DELETE'])
+@login_required
+def delete_user(user_id):
+    """Delete a user."""
+    user = User.query.get_or_404(user_id)
+    
+    # Prevent deleting the last admin user
+    if user.is_admin and User.query.filter_by(is_admin=True).count() <= 1:
+        return jsonify({
+            'status': 'error',
+            'message': 'Cannot delete the last admin user'
+        }), 400
+    
+    # Delete the user
+    db.session.delete(user)
+    db.session.commit()
+    
+    return jsonify({
+        'status': 'success',
+        'message': 'User deleted successfully'
+    }) 
