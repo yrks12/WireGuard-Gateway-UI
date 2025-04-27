@@ -18,6 +18,8 @@ from app.services.route_command_generator import RouteCommandGenerator
 from app.services.status_poller import StatusPoller
 from app.forms import EmailSettingsForm
 from app.models.email_settings import EmailSettings
+from app.models.alert_history import AlertHistory
+from app.services.wireguard_monitor import WireGuardMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -768,3 +770,29 @@ def test_email_settings():
         flash(f'Error sending test email: {str(e)}', 'error')
     
     return redirect(url_for('main.email_settings'))
+
+@bp.route('/monitoring')
+@login_required
+def monitoring():
+    """Show monitoring page with connection status and alert history."""
+    alerts = AlertHistory.get_recent_alerts()
+    return render_template('monitoring.html', alerts=alerts)
+
+@bp.route('/api/monitoring/status')
+@login_required
+def get_monitoring_status():
+    """Get current connection status for all peers."""
+    try:
+        status = WireGuardMonitor.get_connection_status()
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'status': status
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting monitoring status: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500

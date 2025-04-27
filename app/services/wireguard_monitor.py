@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 from app.services.email_service import EmailService
+from app.models.alert_history import AlertHistory
+from flask import current_app
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +80,32 @@ class WireGuardMonitor:
                     subject = f"Client Disconnected: {client_name}"
                     message = f"The client '{client_name}' (peer: {peer[:8]}...) has disconnected from the VPN."
                     
-                    if EmailService.send_alert(subject, message):
-                        cls._last_alerts[peer] = now
-                        logger.info(f"Sent disconnect alert for {client_name}")
-                    else:
-                        logger.error(f"Failed to send disconnect alert for {client_name}")
+                    try:
+                        success = EmailService.send_alert(subject, message)
+                        # Log alert to database
+                        AlertHistory.add_alert(
+                            client_name=client_name,
+                            peer_key=peer,
+                            subject=subject,
+                            message=message,
+                            success=success
+                        )
+                        
+                        if success:
+                            cls._last_alerts[peer] = now
+                            logger.info(f"Sent disconnect alert for {client_name}")
+                        else:
+                            logger.error(f"Failed to send disconnect alert for {client_name}")
+                    except Exception as e:
+                        logger.error(f"Error sending alert: {e}")
+                        # Log failed alert
+                        AlertHistory.add_alert(
+                            client_name=client_name,
+                            peer_key=peer,
+                            subject=subject,
+                            message=message,
+                            success=False
+                        )
     
     @classmethod
     def is_peer_connected(cls, peer_key: str) -> bool:
@@ -93,4 +116,26 @@ class WireGuardMonitor:
         if not last_handshake:
             return False
             
-        return (datetime.now() - last_handshake) < cls.DISCONNECT_THRESHOLD 
+        return (datetime.now() - last_handshake) < cls.DISCONNECT_THRESHOLD
+    
+    @classmethod
+    def get_connection_status(cls) -> Dict[str, Dict]:
+        """
+        Get current connection status for all peers.
+        Returns a dictionary mapping peer keys to their status information.
+        """
+        status = {}
+        now = datetime.now()
+        
+        for peer_key, last_handshake in cls._last_handshakes.items():
+            is_connected = (now - last_handshake) < cls.DISCONNECT_THRESHOLD
+            last_alert = cls._last_alerts.get(peer_key)
+            
+            status[peer_key] = {
+                'connected': is_connected,
+                'last_handshake': last_handshake,
+                'last_alert': last_alert,
+                'time_since_handshake': now - last_handshake
+            }
+        
+        return status 

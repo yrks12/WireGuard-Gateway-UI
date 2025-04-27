@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Monitoring{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <!-- Connection Status -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="mb-0">Connection Status</h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Client</th>
+                                    <th>Status</th>
+                                    <th>Last Handshake</th>
+                                    <th>Last Alert</th>
+                                </tr>
+                            </thead>
+                            <tbody id="connection-status">
+                                <!-- Status will be updated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Alert History -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="mb-0">Alert History</h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Client</th>
+                                    <th>Subject</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for alert in alerts %}
+                                <tr>
+                                    <td>{{ alert.sent_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                    <td>{{ alert.client_name }}</td>
+                                    <td>{{ alert.subject }}</td>
+                                    <td>
+                                        {% if alert.success %}
+                                        <span class="badge bg-success">Success</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Failed</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function formatTimeAgo(timestamp) {
+    const now = new Date();
+    const date = new Date(timestamp);
+    const seconds = Math.floor((now - date) / 1000);
+    
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+function updateConnectionStatus() {
+    fetch('/api/monitoring/status')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('connection-status');
+            tbody.innerHTML = '';
+            
+            for (const [peer, status] of Object.entries(data.status)) {
+                const row = document.createElement('tr');
+                
+                // Client name (first 8 chars of peer key)
+                const clientCell = document.createElement('td');
+                clientCell.textContent = peer.substring(0, 8) + '...';
+                
+                // Status
+                const statusCell = document.createElement('td');
+                const statusBadge = document.createElement('span');
+                statusBadge.className = `badge ${status.connected ? 'bg-success' : 'bg-danger'}`;
+                statusBadge.textContent = status.connected ? 'Connected' : 'Disconnected';
+                statusCell.appendChild(statusBadge);
+                
+                // Last handshake
+                const handshakeCell = document.createElement('td');
+                handshakeCell.textContent = formatTimeAgo(new Date(status.last_handshake));
+                
+                // Last alert
+                const alertCell = document.createElement('td');
+                alertCell.textContent = status.last_alert ? 
+                    formatTimeAgo(new Date(status.last_alert)) : 'Never';
+                
+                row.appendChild(clientCell);
+                row.appendChild(statusCell);
+                row.appendChild(handshakeCell);
+                row.appendChild(alertCell);
+                
+                tbody.appendChild(row);
+            }
+        })
+        .catch(error => console.error('Error updating connection status:', error));
+}
+
+// Update status every 30 seconds
+updateConnectionStatus();
+setInterval(updateConnectionStatus, 30000);
+</script>
+{% endblock %} 
