@@ -3,6 +3,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from app.models.user import User, db
 from app.forms import LoginForm, ChangePasswordForm, CreateUserForm
 from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
 
 bp = Blueprint('auth', __name__)
 
@@ -17,7 +18,16 @@ def login():
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
         if user and check_password_hash(user.password, form.password.data):
+            # Update login tracking information
+            user.last_login_at = user.current_login_at
+            user.current_login_at = datetime.utcnow()
+            user.last_login_ip = user.current_login_ip
+            user.current_login_ip = request.remote_addr
+            user.login_count += 1
+            
+            db.session.commit()
             login_user(user, remember=form.remember.data)
+            
             if user.must_change_password:
                 return redirect(url_for('auth.change_password'))
             return redirect(url_for('main.index'))
