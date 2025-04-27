@@ -681,8 +681,7 @@ def check_handshake(client_id):
 def get_ip_forwarding_status():
     """Get the current IP forwarding status."""
     try:
-        ip_forwarding = IPForwardingService()
-        enabled = ip_forwarding.is_enabled()
+        enabled = IPForwardingService.check_status()
         return jsonify({
             'status': 'success',
             'enabled': enabled
