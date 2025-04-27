@@ -7,6 +7,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from app.services.pending_configs import PendingConfigsService
 from app.services.config_storage import ConfigStorageService
+from app.tasks import monitor_task
 
 # Load environment variables
 load_dotenv()
@@ -81,5 +82,8 @@ def create_app(test_config=None):
         
         # Create database tables
         db.create_all()
+
+        # Initialize monitoring task
+        monitor_task.start()
 
     return app 
