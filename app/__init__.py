@@ -7,7 +7,6 @@ import logging
 from logging.handlers import RotatingFileHandler
 from app.services.pending_configs import PendingConfigsService
 from app.services.config_storage import ConfigStorageService
-from app.models.user import User, db
 
 # Load environment variables
 load_dotenv()
@@ -42,19 +41,6 @@ def create_app(test_config=None):
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
 
-    # Initialize services
-    with app.app_context():
-        # Initialize pending configs service
-        from app.routes.main import init_pending_configs
-        init_pending_configs()
-        
-        # Initialize config storage service
-        db_path = os.path.join(app.instance_path, 'configs.db')
-        app.config_storage = ConfigStorageService(configs_dir, db_path)
-        
-        # Create database tables
-        db.create_all()
-
     # Register blueprints
     from app.routes import main, auth
     app.register_blueprint(main.bp)
@@ -78,5 +64,19 @@ def create_app(test_config=None):
         app.logger.addHandler(file_handler)
         app.logger.setLevel(logging.INFO)
         app.logger.info('WireGuard Gateway UI startup')
+
+    # Initialize services and create database tables within app context
+    with app.app_context():
+        # Initialize pending configs service
+        from app.routes.main import init_pending_configs
+        init_pending_configs()
+        
+        # Initialize config storage service
+        db_path = os.path.join(app.instance_path, 'configs.db')
+        app.config_storage = ConfigStorageService(configs_dir, db_path)
+        
+        # Create database tables
+        from app.models.user import User
+        db.create_all()
 
     return app 
