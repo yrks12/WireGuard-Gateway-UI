@@ -198,5 +198,35 @@ echo "Setting up config file permissions..."
 find $CONFIGS_DIR -type f -name "*.conf" -exec chmod 640 {} \;  # Set config files to 640 (readable by group)
 find $PENDING_DIR -type f -name "*.conf" -exec chmod 640 {} \;  # Set pending config files to 640 (readable by group)
 
+# Create systemd service
+echo "Creating systemd service..."
+cat > /etc/systemd/system/wireguard-gateway.service << EOF
+[Unit]
+Description=WireGuard Gateway Service
+After=network.target
+
+[Service]
+Type=simple
+User=wireguard
+Group=wireguard
+Environment=INSTANCE_PATH=$INSTANCE_DIR
+Environment=DATABASE_URL=sqlite:///$DB_FILE
+Environment=LOG_PATH=$LOG_FILE
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/run.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd and enable service
+echo "Enabling and starting WireGuard Gateway service..."
+systemctl daemon-reload
+systemctl enable wireguard-gateway
+systemctl start wireguard-gateway
+
 echo "Installation complete!"
-echo "You can now run the application using: wireguard-gateway"
+echo "The WireGuard Gateway service has been installed and started."
+echo "You can manage it using: systemctl status/start/stop/restart wireguard-gateway"
