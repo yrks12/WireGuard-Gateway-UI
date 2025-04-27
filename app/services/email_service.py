@@ -28,9 +28,13 @@ class EmailService:
             smtp_username = current_app.config.get('SMTP_USERNAME')
             smtp_password = current_app.config.get('SMTP_PASSWORD')
             smtp_from = current_app.config.get('SMTP_FROM')
+            smtp_use_tls = current_app.config.get('SMTP_USE_TLS', True)
             
-            if not all([smtp_host, smtp_port, smtp_username, smtp_password, smtp_from]):
-                logger.error("SMTP settings not configured")
+            logger.info(f"Attempting to send email with settings: host={smtp_host}, port={smtp_port}, from={smtp_from}")
+            logger.info(f"Recipients: {recipients}")
+            
+            if not all([smtp_host, smtp_port, smtp_from]):
+                logger.error("Required SMTP settings not configured")
                 return False
             
             # Create message
@@ -46,16 +50,29 @@ class EmailService:
                 msg.attach(MIMEText(body, 'plain'))
             
             # Connect to SMTP server
+            logger.info(f"Connecting to SMTP server {smtp_host}:{smtp_port}")
             with smtplib.SMTP(smtp_host, smtp_port) as server:
-                if current_app.config.get('SMTP_USE_TLS', True):
+                # Start TLS if required
+                if smtp_use_tls:
+                    logger.info("Starting TLS connection")
                     server.starttls()
                 
-                # Login
-                server.login(smtp_username, smtp_password)
+                # Only attempt login if credentials are provided
+                if smtp_username and smtp_password:
+                    try:
+                        logger.info("Attempting SMTP login")
+                        server.login(smtp_username, smtp_password)
+                        logger.info("SMTP login successful")
+                    except smtplib.SMTPNotSupportedError:
+                        logger.warning("SMTP server does not support authentication, proceeding without login")
+                    except Exception as e:
+                        logger.error(f"SMTP login failed: {e}")
+                        return False
                 
                 # Send email
+                logger.info("Sending email message")
                 server.send_message(msg)
-                
+                logger.info("Email sent successfully")
                 return True
                 
         except Exception as e:
@@ -74,6 +91,7 @@ class EmailService:
         """
         if recipients is None:
             recipients = current_app.config.get('ALERT_RECIPIENTS', [])
+            logger.info(f"Using configured alert recipients: {recipients}")
         
         if not recipients:
             logger.warning("No recipients specified for alert")
