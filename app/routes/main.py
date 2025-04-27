@@ -796,3 +796,39 @@ def get_monitoring_status():
             'status': 'error',
             'message': str(e)
         }), 500
+
+@bp.route('/api/monitoring/test', methods=['POST'])
+@login_required
+def test_monitoring():
+    """Manually trigger connection checks and alerts for testing."""
+    try:
+        # Get all active clients
+        clients = current_app.config_storage.list_clients()
+        results = []
+        
+        for client in clients:
+            if client.get('status') == 'active':
+                interface = client.get('interface')
+                client_name = client.get('name', 'Unknown')
+                
+                if interface:
+                    # Force check and alert
+                    WireGuardMonitor.check_and_alert(interface, client_name)
+                    results.append({
+                        'client': client_name,
+                        'interface': interface,
+                        'status': 'checked'
+                    })
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Connection checks triggered',
+            'results': results
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in test monitoring: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500

@@ -4,6 +4,20 @@
 
 {% block content %}
 <div class="container mt-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Test Monitoring</h5>
+                    <p class="card-text">Manually trigger connection checks and alerts for testing.</p>
+                    <button class="btn btn-primary" onclick="testMonitoring()">
+                        <i class="fas fa-sync-alt me-2"></i>Run Connection Check
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <div class="row">
         <!-- Connection Status -->
         <div class="col-md-6">
@@ -125,6 +139,50 @@ function updateConnectionStatus() {
             }
         })
         .catch(error => console.error('Error updating connection status:', error));
+}
+
+function testMonitoring() {
+    fetch('/api/monitoring/test', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Show success message
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success alert-dismissible fade show mt-3';
+            alertDiv.innerHTML = `
+                <strong>Success!</strong> Connection checks triggered for ${data.results.length} clients.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+            
+            // Update status after a short delay
+            setTimeout(updateConnectionStatus, 2000);
+        } else {
+            // Show error message
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-danger alert-dismissible fade show mt-3';
+            alertDiv.innerHTML = `
+                <strong>Error!</strong> ${data.message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+        }
+    })
+    .catch(error => {
+        console.error('Error testing monitoring:', error);
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger alert-dismissible fade show mt-3';
+        alertDiv.innerHTML = `
+            <strong>Error!</strong> Failed to trigger connection checks.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.row'));
+    });
 }
 
 // Update status every 30 seconds
