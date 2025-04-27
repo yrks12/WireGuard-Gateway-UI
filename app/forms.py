@@ -16,4 +16,19 @@ class ChangePasswordForm(FlaskForm):
     confirm_password = PasswordField('Confirm New Password', validators=[
         DataRequired(),
         EqualTo('new_password', message='Passwords must match')
-    ]) 
+    ])
+
+class CreateUserForm(FlaskForm):
+    username = StringField('Username', validators=[
+        DataRequired(),
+        Length(min=3, max=80, message='Username must be between 3 and 80 characters')
+    ])
+    password = PasswordField('Password', validators=[
+        DataRequired(),
+        Length(min=8, message='Password must be at least 8 characters long')
+    ])
+    confirm_password = PasswordField('Confirm Password', validators=[
+        DataRequired(),
+        EqualTo('password', message='Passwords must match')
+    ])
+    must_change_password = BooleanField('Require password change on first login', default=True) 

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
 from app.models.user import User, db
-from app.forms import LoginForm, ChangePasswordForm
+from app.forms import LoginForm, ChangePasswordForm, CreateUserForm
 from werkzeug.security import generate_password_hash, check_password_hash
 
 bp = Blueprint('auth', __name__)
@@ -24,6 +24,43 @@ def login():
         flash('Invalid username or password', 'error')
     
     return render_template('auth/login.html', form=form)
+
+@bp.route('/profile')
+@login_required
+def profile():
+    """Show user profile page."""
+    return render_template('auth/profile.html')
+
+@bp.route('/users')
+@login_required
+def users():
+    """Show user management page."""
+    users = User.query.all()
+    return render_template('auth/users.html', users=users)
+
+@bp.route('/users/create', methods=['GET', 'POST'])
+@login_required
+def create_user():
+    """Create a new user."""
+    form = CreateUserForm()
+    if form.validate_on_submit():
+        # Check if username already exists
+        if User.query.filter_by(username=form.username.data).first():
+            flash('Username already exists', 'error')
+            return redirect(url_for('auth.create_user'))
+        
+        # Create new user
+        user = User(
+            username=form.username.data,
+            password=generate_password_hash(form.password.data),
+            must_change_password=form.must_change_password.data
+        )
+        db.session.add(user)
+        db.session.commit()
+        flash('User created successfully', 'success')
+        return redirect(url_for('auth.users'))
+    
+    return render_template('auth/create_user.html', form=form)
 
 @bp.route('/change-password', methods=['GET', 'POST'])
 @login_required
