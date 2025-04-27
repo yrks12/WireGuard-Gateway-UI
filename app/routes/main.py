@@ -10,11 +10,14 @@ import logging
 from app.services.wireguard import WireGuardService
 from app.services.pending_configs import PendingConfigsService
 from app.services.ip_forwarding import IPForwardingService
+from app.services.email_service import EmailService
 from datetime import datetime, timedelta
 from app.services.iptables_manager import IptablesManager
 from app.services.connectivity_test import ConnectivityTestService
 from app.services.route_command_generator import RouteCommandGenerator
 from app.services.status_poller import StatusPoller
+from app.forms import EmailSettingsForm
+from app.models.email_settings import EmailSettings
 
 logger = logging.getLogger(__name__)
 
@@ -692,3 +695,53 @@ def get_ip_forwarding_status():
             'status': 'error',
             'message': str(e)
         }), 500
+
+@bp.route('/email-settings', methods=['GET', 'POST'])
+@login_required
+def email_settings():
+    """Configure email alert settings."""
+    form = EmailSettingsForm()
+    
+    if request.method == 'GET':
+        # Load existing settings
+        settings = EmailSettings.get_settings()
+        if settings:
+            form.smtp_host.data = settings.smtp_host
+            form.smtp_port.data = settings.smtp_port
+            form.smtp_username.data = settings.smtp_username
+            form.smtp_from.data = settings.smtp_from
+            form.smtp_use_tls.data = settings.smtp_use_tls
+            form.alert_recipients.data = settings.alert_recipients
+    
+    if form.validate_on_submit():
+        try:
+            # Update settings
+            EmailSettings.update_settings(
+                smtp_host=form.smtp_host.data,
+                smtp_port=form.smtp_port.data,
+                smtp_username=form.smtp_username.data,
+                smtp_password=form.smtp_password.data,
+                smtp_from=form.smtp_from.data,
+                smtp_use_tls=form.smtp_use_tls.data,
+                alert_recipients=form.alert_recipients.data
+            )
+            
+            # Update app config
+            current_app.config.update({
+                'SMTP_HOST': form.smtp_host.data,
+                'SMTP_PORT': form.smtp_port.data,
+                'SMTP_USERNAME': form.smtp_username.data,
+                'SMTP_PASSWORD': form.smtp_password.data,
+                'SMTP_FROM': form.smtp_from.data,
+                'SMTP_USE_TLS': form.smtp_use_tls.data,
+                'ALERT_RECIPIENTS': [email.strip() for email in form.alert_recipients.data.split(',')]
+            })
+            
+            flash('Email settings updated successfully', 'success')
+            return redirect(url_for('main.email_settings'))
+            
+        except Exception as e:
+            logger.error(f"Error updating email settings: {e}")
+            flash('Failed to update email settings', 'error')
+    
+    return render_template('email_settings.html', form=form)
