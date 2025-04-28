@@ -40,6 +40,21 @@
             color: white !important;
         }
         
+        .dropdown-menu {
+            background-color: var(--primary-color);
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .dropdown-item {
+            color: rgba(255,255,255,0.8) !important;
+        }
+        
+        .dropdown-item:hover {
+            background-color: var(--secondary-color);
+            color: white !important;
+        }
+        
         .status-badge {
             font-size: 0.85rem;
             padding: 0.4rem 0.8rem;
@@ -89,45 +104,54 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
+                    <!-- Dashboard -->
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.index') }}">
                             <i class="fas fa-tachometer-alt me-1"></i>Dashboard
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('main.clients') }}">
-                            <i class="fas fa-users me-1"></i>Clients
+
+                    <!-- Network Management -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="networkDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-network-wired me-1"></i>Network
                         </a>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('main.clients') }}">
+                                    <i class="fas fa-users me-1"></i>Clients
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('main.monitoring') }}">
+                                    <i class="fas fa-chart-line me-1"></i>Monitoring
+                                </a>
+                            </li>
+                        </ul>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('auth.users') }}">
-                            <i class="fas fa-user-cog me-1"></i>Users
+
+                    <!-- System Settings -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="settingsDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-cog me-1"></i>Settings
                         </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('main.email_settings') }}">
-                            <i class="fas fa-envelope me-1"></i>Email Alerts
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('main.monitoring') }}">
-                            <i class="fas fa-chart-line me-1"></i>Monitoring
-                        </a>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('main.email_settings') }}">
+                                    <i class="fas fa-envelope me-1"></i>Email Alerts
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('auth.users') }}">
+                                    <i class="fas fa-user-cog me-1"></i>User Management
+                                </a>
+                            </li>
+                        </ul>
                     </li>
                 </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('auth.profile') }}">
-                            <i class="fas fa-user me-1"></i>Profile
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('auth.logout') }}">
-                            <i class="fas fa-sign-out-alt me-1"></i>Logout
-                        </a>
-                    </li>
-                </ul>
-                <div class="d-flex align-items-center">
+
+                <!-- System Status -->
+                <div class="d-flex align-items-center me-3">
                     <div class="status-badge bg-primary me-2" id="cpu-status">
                         <i class="fas fa-microchip"></i>CPU: <span>0%</span>
                     </div>
@@ -138,6 +162,28 @@
                         <i class="fas fa-exchange-alt"></i>IP Forwarding: <span>Loading...</span>
                     </div>
                 </div>
+
+                <!-- User Menu -->
+                <ul class="navbar-nav">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user me-1"></i>Account
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('auth.profile') }}">
+                                    <i class="fas fa-user-circle me-1"></i>Profile
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('auth.logout') }}">
+                                    <i class="fas fa-sign-out-alt me-1"></i>Logout
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
             </div>
         </div>
     </nav>
