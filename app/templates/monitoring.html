@@ -3,32 +3,20 @@
 {% block title %}Monitoring{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
-    <div id="alert-area"></div>
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Test Monitoring</h5>
-                    <p class="card-text">Manually trigger connection checks and alerts for testing.</p>
-                    <button class="btn btn-primary" onclick="testMonitoring()">
-                        <i class="fas fa-sync-alt me-2"></i>Run Connection Check
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Monitoring Controls</h5>
+                    <button id="test-monitoring" class="btn btn-primary">
+                        <i class="fas fa-sync-alt me-2"></i>Test Monitoring
                     </button>
                 </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="row">
-        <!-- Connection Status -->
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="mb-0">Connection Status</h3>
-                </div>
                 <div class="card-body">
+                    <div id="test-results" class="alert d-none"></div>
                     <div class="table-responsive">
-                        <table class="table table-striped">
+                        <table class="table">
                             <thead>
                                 <tr>
                                     <th>Client</th>
@@ -37,47 +25,35 @@
                                     <th>Last Alert</th>
                                 </tr>
                             </thead>
-                            <tbody id="connection-status">
-                                <!-- Status will be updated by JavaScript -->
+                            <tbody id="monitoring-status">
+                                <tr>
+                                    <td colspan="4" class="text-center">Loading monitoring status...</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-        </div>
-        
-        <!-- Alert History -->
-        <div class="col-md-6">
+
             <div class="card">
                 <div class="card-header">
-                    <h3 class="mb-0">Alert History</h3>
+                    <h5 class="mb-0">Alert History</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-striped">
+                        <table class="table">
                             <thead>
                                 <tr>
-                                    <th>Time</th>
+                                    <th>Timestamp</th>
                                     <th>Client</th>
                                     <th>Subject</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                {% for alert in alerts %}
+                            <tbody id="alert-history">
                                 <tr>
-                                    <td>{{ alert.sent_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                                    <td>{{ alert.client_name }}</td>
-                                    <td>{{ alert.subject }}</td>
-                                    <td>
-                                        {% if alert.success %}
-                                        <span class="badge bg-success">Success</span>
-                                        {% else %}
-                                        <span class="badge bg-danger">Failed</span>
-                                        {% endif %}
-                                    </td>
+                                    <td colspan="4" class="text-center">Loading alert history...</td>
                                 </tr>
-                                {% endfor %}
                             </tbody>
                         </table>
                     </div>
@@ -90,140 +66,116 @@
 
 {% block extra_js %}
 <script>
-function formatTimeAgo(timestamp) {
-    if (!timestamp || isNaN(new Date(timestamp).getTime())) {
-        return 'Never';
+    // Function to update monitoring status
+    function updateMonitoringStatus() {
+        fetch('/api/monitoring/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const statusBody = document.getElementById('monitoring-status');
+                    statusBody.innerHTML = '';
+                    
+                    Object.entries(data.data.status).forEach(([clientId, clientData]) => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${clientData.name}</td>
+                            <td>
+                                <span class="badge ${clientData.connected ? 'bg-success' : 'bg-danger'}">
+                                    ${clientData.connected ? 'Connected' : 'Disconnected'}
+                                </span>
+                            </td>
+                            <td>${clientData.last_handshake || 'Never'}</td>
+                            <td>${clientData.last_alert || 'Never'}</td>
+                        `;
+                        statusBody.appendChild(row);
+                    });
+                }
+            })
+            .catch(error => console.error('Error updating monitoring status:', error));
     }
-    const now = new Date();
-    const date = new Date(timestamp);
-    const seconds = Math.floor((now - date) / 1000);
-    
-    if (seconds < 60) return 'just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
-}
 
-function updateConnectionStatus() {
-    fetch('/api/monitoring/status')
+    // Function to update alert history
+    function updateAlertHistory() {
+        fetch('/api/monitoring/alerts')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const historyBody = document.getElementById('alert-history');
+                    historyBody.innerHTML = '';
+                    
+                    if (data.alerts.length === 0) {
+                        historyBody.innerHTML = '<tr><td colspan="4" class="text-center">No alerts found</td></tr>';
+                        return;
+                    }
+                    
+                    data.alerts.forEach(alert => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${new Date(alert.timestamp).toLocaleString()}</td>
+                            <td>${alert.client_name}</td>
+                            <td>${alert.subject}</td>
+                            <td>
+                                <span class="badge ${alert.success ? 'bg-success' : 'bg-danger'}">
+                                    ${alert.success ? 'Sent' : 'Failed'}
+                                </span>
+                            </td>
+                        `;
+                        historyBody.appendChild(row);
+                    });
+                }
+            })
+            .catch(error => console.error('Error updating alert history:', error));
+    }
+
+    // Function to test monitoring
+    function testMonitoring() {
+        const testButton = document.getElementById('test-monitoring');
+        const testResults = document.getElementById('test-results');
+        
+        testButton.disabled = true;
+        testButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Testing...';
+        
+        fetch('/api/monitoring/test', {
+            method: 'POST'
+        })
         .then(response => response.json())
         .then(data => {
-            const tbody = document.getElementById('connection-status');
-            tbody.innerHTML = '';
+            testResults.className = `alert alert-${data.status === 'success' ? 'success' : 'danger'} d-block`;
+            testResults.innerHTML = `
+                <h5>${data.status === 'success' ? 'Test Successful' : 'Test Failed'}</h5>
+                <p>${data.message}</p>
+                ${data.results ? `
+                    <ul class="mb-0">
+                        ${data.results.map(result => `
+                            <li>${result.client} (${result.interface}): ${result.status}</li>
+                        `).join('')}
+                    </ul>
+                ` : ''}
+            `;
             
-            for (const [peer, status] of Object.entries(data.status)) {
-                const row = document.createElement('tr');
-                
-                // Client name
-                const clientCell = document.createElement('td');
-                clientCell.textContent = status.name || peer;
-                
-                // Status
-                const statusCell = document.createElement('td');
-                const statusBadge = document.createElement('span');
-                statusBadge.className = `badge ${status.connected ? 'bg-success' : 'bg-danger'}`;
-                statusBadge.textContent = status.connected ? 'Connected' : 'Disconnected';
-                statusCell.appendChild(statusBadge);
-                
-                // Last handshake
-                const handshakeCell = document.createElement('td');
-                handshakeCell.textContent = formatTimeAgo(status.last_handshake);
-                
-                // Last alert
-                const alertCell = document.createElement('td');
-                alertCell.textContent = status.last_alert ? 
-                    formatTimeAgo(new Date(status.last_alert)) : 'Never';
-                
-                row.appendChild(clientCell);
-                row.appendChild(statusCell);
-                row.appendChild(handshakeCell);
-                row.appendChild(alertCell);
-                
-                tbody.appendChild(row);
-            }
+            // Update status and history after test
+            updateMonitoringStatus();
+            updateAlertHistory();
         })
-        .catch(error => console.error('Error updating connection status:', error));
-}
+        .catch(error => {
+            testResults.className = 'alert alert-danger d-block';
+            testResults.innerHTML = `<h5>Error</h5><p>${error.message}</p>`;
+        })
+        .finally(() => {
+            testButton.disabled = false;
+            testButton.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Test Monitoring';
+        });
+    }
 
-function testMonitoring() {
-    fetch('/api/monitoring/test', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            // Show success message
-            const alertDiv = document.createElement('div');
-            alertDiv.className = 'alert alert-success alert-dismissible fade show mt-3';
-            alertDiv.innerHTML = `
-                <strong>Success!</strong> Connection checks triggered for ${data.results.length} clients.
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            const container = document.querySelector('.container');
-            const alertArea = document.getElementById('alert-area');
-            if (alertArea) {
-                alertArea.appendChild(alertDiv);
-            } else {
-                const row = document.querySelector('.row');
-                if (container && row && row.parentNode === container) {
-                    container.insertBefore(alertDiv, row);
-                } else if (container) {
-                    container.appendChild(alertDiv);
-                }
-            }
-            
-            // Update status after a short delay
-            setTimeout(updateConnectionStatus, 2000);
-        } else {
-            // Show error message
-            const alertDiv = document.createElement('div');
-            alertDiv.className = 'alert alert-danger alert-dismissible fade show mt-3';
-            alertDiv.innerHTML = `
-                <strong>Error!</strong> ${data.message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            const container = document.querySelector('.container');
-            const alertArea = document.getElementById('alert-area');
-            if (alertArea) {
-                alertArea.appendChild(alertDiv);
-            } else {
-                const row = document.querySelector('.row');
-                if (container && row && row.parentNode === container) {
-                    container.insertBefore(alertDiv, row);
-                } else if (container) {
-                    container.appendChild(alertDiv);
-                }
-            }
-        }
-    })
-    .catch(error => {
-        console.error('Error testing monitoring:', error);
-        const alertDiv = document.createElement('div');
-        alertDiv.className = 'alert alert-danger alert-dismissible fade show mt-3';
-        alertDiv.innerHTML = `
-            <strong>Error!</strong> Failed to trigger connection checks.
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        const container = document.querySelector('.container');
-        const alertArea = document.getElementById('alert-area');
-        if (alertArea) {
-            alertArea.appendChild(alertDiv);
-        } else {
-            const row = document.querySelector('.row');
-            if (container && row && row.parentNode === container) {
-                container.insertBefore(alertDiv, row);
-            } else if (container) {
-                container.appendChild(alertDiv);
-            }
-        }
-    });
-}
+    // Add event listener for test button
+    document.getElementById('test-monitoring').addEventListener('click', testMonitoring);
 
-// Update status every 30 seconds
-updateConnectionStatus();
-setInterval(updateConnectionStatus, 30000);
+    // Initial load
+    updateMonitoringStatus();
+    updateAlertHistory();
+
+    // Set up periodic updates
+    setInterval(updateMonitoringStatus, 30000); // Update every 30 seconds
+    setInterval(updateAlertHistory, 60000); // Update every minute
 </script>
 {% endblock %} 

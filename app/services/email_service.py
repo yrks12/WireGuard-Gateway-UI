@@ -61,7 +61,7 @@ class EmailService:
                 if smtp_username and smtp_password:
                     try:
                         logger.info("Attempting SMTP login")
-                        server.login(smtp_username, smtp_password)
+                server.login(smtp_username, smtp_password)
                         logger.info("SMTP login successful")
                     except smtplib.SMTPNotSupportedError:
                         logger.warning("SMTP server does not support authentication, proceeding without login")

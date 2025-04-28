@@ -779,13 +779,6 @@ def test_email_settings():
     
     return redirect(url_for('main.email_settings'))
 
-@bp.route('/monitoring')
-@login_required
-def monitoring():
-    """Show monitoring page with connection status and alert history."""
-    alerts = AlertHistory.get_recent_alerts()
-    return render_template('monitoring.html', alerts=alerts)
-
 @bp.route('/api/monitoring/status')
 @login_required
 def get_monitoring_status():
@@ -794,10 +787,25 @@ def get_monitoring_status():
         clients = current_app.config_storage.list_clients()
         status = {}
         for client in clients:
+            # Get interface name from config path
+            config_path = client.get('config_path')
+            if config_path:
+                interface = os.path.splitext(os.path.basename(config_path))[0]
+                # Get current handshake status
+                peers = WireGuardMonitor.check_interface(interface)
+                last_handshake = None
+                for peer, is_connected in peers.items():
+                    if is_connected and peer in WireGuardMonitor._last_handshakes:
+                        last_handshake = WireGuardMonitor._last_handshakes[peer]
+                        break
+            else:
+                interface = None
+                last_handshake = None
+
             status[client['id']] = {
                 'name': client['name'],
                 'connected': client['status'] == 'active',
-                'last_handshake': client['last_handshake'],
+                'last_handshake': last_handshake.isoformat() if last_handshake else None,
                 'last_alert': None  # You can enhance this to fetch from alert history if needed
             }
         return jsonify({
@@ -821,12 +829,15 @@ def test_monitoring():
         # Get all active clients
         clients = current_app.config_storage.list_clients()
         results = []
-        
         for client in clients:
             if client.get('status') == 'active':
-                interface = client.get('interface')
+                # Derive interface name from config_path
+                config_path = client.get('config_path')
+                if config_path:
+                    interface = os.path.splitext(os.path.basename(config_path))[0]
+                else:
+                    interface = None
                 client_name = client.get('name', 'Unknown')
-                
                 if interface:
                     # Force check and alert
                     WireGuardMonitor.check_and_alert(interface, client_name)
@@ -835,15 +846,43 @@ def test_monitoring():
                         'interface': interface,
                         'status': 'checked'
                     })
-        
         return jsonify({
             'status': 'success',
             'message': 'Connection checks triggered',
             'results': results
         })
-        
     except Exception as e:
         logger.error(f"Error in test monitoring: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@bp.route('/monitoring')
+@login_required
+def monitoring():
+    """Show the monitoring page."""
+    return render_template('monitoring.html')
+
+@bp.route('/api/monitoring/alerts')
+@login_required
+def get_alert_history():
+    """Get alert history for the monitoring page."""
+    try:
+        # Get alerts from the database
+        alerts = AlertHistory.query.order_by(AlertHistory.sent_at.desc()).limit(100).all()
+        
+        return jsonify({
+            'status': 'success',
+            'alerts': [{
+                'timestamp': alert.sent_at.isoformat(),
+                'client_name': alert.client_name,
+                'subject': alert.subject,
+                'success': alert.success
+            } for alert in alerts]
+        })
+    except Exception as e:
+        logger.error(f"Error getting alert history: {e}")
         return jsonify({
             'status': 'error',
             'message': str(e)

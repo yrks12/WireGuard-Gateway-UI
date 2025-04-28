@@ -50,11 +50,35 @@ class WireGuardMonitor:
                     handshake_str = line.split(': ')[1]
                     if handshake_str != '0':
                         try:
-                            # Parse handshake time
-                            handshake_time = datetime.strptime(handshake_str, '%Y-%m-%d %H:%M:%S')
+                            # Calculate the actual timestamp by subtracting the time ago from current time
+                            total_seconds = 0
+                            
+                            # Handle combined formats like "1 minute, 45 seconds ago"
+                            if ',' in handshake_str:
+                                parts = handshake_str.split(',')
+                                for part in parts:
+                                    part = part.strip()
+                                    if 'minute' in part:
+                                        minutes = int(part.split()[0])
+                                        total_seconds += minutes * 60
+                                    elif 'second' in part:
+                                        seconds = int(part.split()[0])
+                                        total_seconds += seconds
+                            else:
+                                # Handle single unit formats
+                                if 'seconds ago' in handshake_str:
+                                    total_seconds = int(handshake_str.split()[0])
+                                elif 'minutes ago' in handshake_str:
+                                    total_seconds = int(handshake_str.split()[0]) * 60
+                                elif 'hours ago' in handshake_str:
+                                    total_seconds = int(handshake_str.split()[0]) * 3600
+                                elif 'days ago' in handshake_str:
+                                    total_seconds = int(handshake_str.split()[0]) * 86400
+                            
+                            handshake_time = datetime.now() - timedelta(seconds=total_seconds)
                             peers[current_peer] = True
                             cls._last_handshakes[current_peer] = handshake_time
-                        except ValueError:
+                        except (ValueError, TypeError) as e:
                             logger.error(f"Failed to parse handshake time: {handshake_str}")
             
             return peers
