@@ -20,6 +20,7 @@ from app.forms import EmailSettingsForm
 from app.models.email_settings import EmailSettings
 from app.models.alert_history import AlertHistory
 from app.services.wireguard_monitor import WireGuardMonitor
+from app.services.reboot_service import RebootService
 
 logger = logging.getLogger(__name__)
 
@@ -887,3 +888,14 @@ def get_alert_history():
             'status': 'error',
             'message': str(e)
         }), 500
+
+@bp.route('/system/reboot', methods=['POST'])
+@login_required
+@rate_limit(max_requests=2, time_window=60)
+def reboot_system():
+    """Endpoint to reboot the server."""
+    success, error = RebootService.reboot()
+    if success:
+        return jsonify({'status': 'success', 'message': 'Reboot initiated'}), 200
+    else:
+        return jsonify({'status': 'error', 'message': error or 'Failed to reboot'}), 500

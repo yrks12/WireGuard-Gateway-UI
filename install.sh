@@ -204,6 +204,7 @@ wireguard ALL=(ALL) NOPASSWD: /usr/bin/ping -c 1 -W 2 *
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg show *
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/ip route show default
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/ip addr show *
+wireguard ALL=(ALL) NOPASSWD: /sbin/reboot
 EOF
 chmod 440 /etc/sudoers.d/wireguard
 
