@@ -61,7 +61,7 @@ class EmailService:
                 if smtp_username and smtp_password:
                     try:
                         logger.info("Attempting SMTP login")
-                server.login(smtp_username, smtp_password)
+                        server.login(smtp_username, smtp_password)
                         logger.info("SMTP login successful")
                     except smtplib.SMTPNotSupportedError:
                         logger.warning("SMTP server does not support authentication, proceeding without login")
@@ -98,7 +98,7 @@ class EmailService:
             return False
             
         return EmailService.send_email(
-            subject=f"[WireGuard Gateway Alert] {subject}",
+            subject=subject,
             body=message,
             recipients=recipients,
             is_html=is_html
