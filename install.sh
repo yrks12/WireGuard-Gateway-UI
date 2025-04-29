@@ -66,6 +66,21 @@ done
 print_header "WireGuard Gateway Installation"
 print_status "Starting installation process..."
 
+# Create wireguard user and group if they don't exist
+print_status "Setting up WireGuard user and groups..."
+if ! getent group wireguard >/dev/null; then
+    groupadd wireguard
+fi
+
+if ! getent passwd wireguard >/dev/null; then
+    useradd -g wireguard -s /bin/false wireguard
+fi
+
+# Add wireguard user and root to necessary groups
+usermod -a -G sudo wireguard
+usermod -a -G netdev wireguard
+usermod -a -G wireguard root
+
 # Install required packages if not skipped
 if [ "$SKIP_DEPENDENCIES" = false ]; then
     print_header "Installing System Dependencies"
@@ -166,21 +181,6 @@ source $INSTALL_DIR/venv/bin/activate
 python $INSTALL_DIR/run.py
 SCRIPT_EOF
 EOF
-
-# Create wireguard user and group if they don't exist
-print_status "Setting up WireGuard user and groups..."
-if ! getent group wireguard >/dev/null; then
-    groupadd wireguard
-fi
-
-if ! getent passwd wireguard >/dev/null; then
-    useradd -g wireguard -s /bin/false wireguard
-fi
-
-# Add wireguard user and root to necessary groups
-usermod -a -G sudo wireguard
-usermod -a -G netdev wireguard
-usermod -a -G wireguard root
 
 # Set up sudoers entry for wireguard user
 print_status "Configuring sudo permissions..."
