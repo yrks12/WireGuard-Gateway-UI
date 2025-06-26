@@ -116,7 +116,31 @@ class ConfigStorageService:
                 'updated_at': row[8]
             }
         
+        # Register hostname for DNS monitoring if present
+        self._register_hostname_for_monitoring(client_id, config_content)
+        
         return client_id, metadata
+    
+    def _register_hostname_for_monitoring(self, client_id: str, config_content: str) -> None:
+        """
+        Register a client's hostname for DNS monitoring if present in config.
+        """
+        try:
+            from app.services.dns_resolver import DNSResolver
+            
+            # Extract hostname from config
+            hostname = DNSResolver.extract_hostname_from_config(config_content)
+            if hostname:
+                # Get client name from database
+                client = self.get_client(client_id)
+                client_name = client.get('name', 'Unknown') if client else 'Unknown'
+                
+                DNSResolver.register_client_hostname(client_id, hostname, client_name)
+        except Exception as e:
+            # Log error but don't fail the config storage
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to register hostname for client {client_id}: {e}")
     
     def get_client(self, client_id: str) -> Optional[Dict]:
         """Retrieve client metadata by ID."""
@@ -221,6 +245,15 @@ class ConfigStorageService:
                 os.remove(path)
             except OSError:
                 pass
+            
+        # Unregister hostname from DNS monitoring
+        try:
+            from app.services.dns_resolver import DNSResolver
+            DNSResolver.unregister_client_hostname(client_id)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to unregister hostname for client {client_id}: {e}")
             
         # Delete from database
         with sqlite3.connect(self.db_path) as conn:

@@ -7,7 +7,6 @@ from logging.handlers import RotatingFileHandler
 from app.services.pending_configs import PendingConfigsService
 from app.services.config_storage import ConfigStorageService
 from app.database import db
-from app.tasks import monitor_task
 
 # Load environment variables
 load_dotenv()
@@ -24,7 +23,7 @@ def create_app(test_config=None):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Set up instance paths
-    app.instance_path = os.getenv('INSTANCE_PATH', '/opt/wireguard-gateway/instance')
+    app.instance_path = os.getenv('INSTANCE_PATH', './instance')
     os.makedirs(app.instance_path, exist_ok=True)
     
     # Create configs directory in instance folder
@@ -82,8 +81,58 @@ def create_app(test_config=None):
         # Create database tables
         db.create_all()
 
+        # Create default development user if in debug mode
+        create_default_dev_user(app)
+
+        # Initialize DNS monitoring and auto-reconnect system
+        init_dns_monitoring_and_auto_reconnect(app)
+
         # Initialize monitoring task
         from app.tasks import start
         start(app)
 
-    return app 
+    return app
+
+def create_default_dev_user(app):
+    """Create a default development user if running in debug mode."""
+    if app.debug:
+        try:
+            from app.models.user import User
+            from werkzeug.security import generate_password_hash
+            
+            # Check if default user already exists
+            if not User.query.filter_by(username='admin').first():
+                admin = User(
+                    username='admin',
+                    password=generate_password_hash('admin123'),
+                    must_change_password=False  # Don't force password change in dev
+                )
+                db.session.add(admin)
+                db.session.commit()
+                app.logger.info("Created default development user: admin/admin123")
+        except Exception as e:
+            app.logger.error(f"Failed to create default development user: {e}")
+
+def init_dns_monitoring_and_auto_reconnect(app):
+    """Initialize DNS monitoring and auto-reconnect system."""
+    try:
+        from app.services.dns_resolver import DNSResolver
+        from app.services.auto_reconnect import AutoReconnectService
+        
+        # Set up DNS change callback
+        def handle_dns_changes(changes):
+            """Handle DNS changes by triggering auto-reconnect."""
+            for change in changes:
+                AutoReconnectService.handle_dns_change(change, app.config_storage)
+        
+        # Register the callback
+        DNSResolver.set_dns_change_callback(handle_dns_changes)
+        
+        # Start DNS monitoring
+        DNSResolver.start_monitoring()
+        
+        app.logger.info("DNS monitoring and auto-reconnect system initialized")
+        
+    except Exception as e:
+        app.logger.error(f"Failed to initialize DNS monitoring: {e}")
+        # Don't fail the app startup if DNS monitoring fails 

@@ -862,8 +862,14 @@ def test_monitoring():
 @bp.route('/monitoring')
 @login_required
 def monitoring():
-    """Show the monitoring page."""
+    """Show monitoring page."""
     return render_template('monitoring.html')
+
+@bp.route('/ddns-monitoring')
+@login_required
+def ddns_monitoring():
+    """Show DDNS monitoring page."""
+    return render_template('ddns_monitoring.html')
 
 @bp.route('/api/monitoring/alerts')
 @login_required
@@ -899,3 +905,113 @@ def reboot_system():
         return jsonify({'status': 'success', 'message': 'Reboot initiated'}), 200
     else:
         return jsonify({'status': 'error', 'message': error or 'Failed to reboot'}), 500
+
+# New DNS and Auto-Reconnect API endpoints
+
+@bp.route('/api/dns/status')
+@login_required
+def get_dns_status():
+    """Get DNS resolution status for all monitored hostnames."""
+    try:
+        from app.services.dns_resolver import DNSResolver
+        status = DNSResolver.get_hostname_status()
+        return jsonify({
+            'status': 'success',
+            'dns_status': status
+        })
+    except Exception as e:
+        logger.error(f"Error getting DNS status: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@bp.route('/api/auto-reconnect/status')
+@login_required
+def get_auto_reconnect_status():
+    """Get auto-reconnection status for all clients."""
+    try:
+        from app.services.auto_reconnect import AutoReconnectService
+        status = AutoReconnectService.get_reconnection_status()
+        return jsonify({
+            'status': 'success',
+            'reconnect_status': status
+        })
+    except Exception as e:
+        logger.error(f"Error getting auto-reconnect status: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@bp.route('/api/auto-reconnect/clear-history', methods=['POST'])
+@login_required
+def clear_reconnect_history():
+    """Clear all auto-reconnection history."""
+    try:
+        from app.services.auto_reconnect import AutoReconnectService
+        AutoReconnectService.clear_all_reconnection_history()
+        return jsonify({
+            'status': 'success',
+            'message': 'Reconnection history cleared'
+        })
+    except Exception as e:
+        logger.error(f"Error clearing reconnection history: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@bp.route('/api/auto-reconnect/clear-client/<client_id>', methods=['POST'])
+@login_required
+def clear_client_reconnect_history(client_id):
+    """Clear auto-reconnection history for a specific client."""
+    try:
+        from app.services.auto_reconnect import AutoReconnectService
+        AutoReconnectService.clear_reconnection_history(client_id)
+        return jsonify({
+            'status': 'success',
+            'message': f'Reconnection history cleared for client {client_id}'
+        })
+    except Exception as e:
+        logger.error(f"Error clearing reconnection history for client {client_id}: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@bp.route('/api/auto-reconnect/manual-reconnect/<client_id>', methods=['POST'])
+@login_required
+def manual_reconnect_client(client_id):
+    """Manually trigger a reconnection for a specific client."""
+    try:
+        from app.services.auto_reconnect import AutoReconnectService
+        
+        # Get client information
+        client = current_app.config_storage.get_client(client_id)
+        if not client:
+            return jsonify({
+                'status': 'error',
+                'message': 'Client not found'
+            }), 404
+        
+        # Trigger manual reconnection
+        success = AutoReconnectService._reconnect_client(client, current_app.config_storage)
+        
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': f'Manual reconnection initiated for client {client["name"]}'
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': f'Failed to reconnect client {client["name"]}'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error during manual reconnection of client {client_id}: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500

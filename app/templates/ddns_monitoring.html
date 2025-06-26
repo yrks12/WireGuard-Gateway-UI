@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}DDNS Monitoring{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-globe me-2"></i>DDNS Monitoring & Auto-Reconnect
+                    </h5>
+                    <div>
+                        <button class="btn btn-warning btn-sm" onclick="clearAllHistory()">
+                            <i class="fas fa-trash me-1"></i>Clear All History
+                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="refreshData()">
+                            <i class="fas fa-sync-alt me-1"></i>Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-3">
+                        Monitor DDNS hostname resolution and automatic reconnection attempts for WireGuard clients.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Monitored Clients</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Client Name</th>
+                                    <th>DDNS Hostname</th>
+                                    <th>Current IP</th>
+                                    <th>Last IP Change</th>
+                                    <th>Reconnect Status</th>
+                                    <th>Last Reconnect</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ddns-monitoring-table">
+                                <tr>
+                                    <td colspan="7" class="text-center">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                        Loading DDNS monitoring data...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Legend -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">Status Legend</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <span class="badge bg-success me-2">✅ Success</span>
+                            <small class="text-muted">Reconnection successful</small>
+                        </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-danger me-2">❌ Failed</span>
+                            <small class="text-muted">Reconnection failed</small>
+                        </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-warning me-2">⏳ Pending</span>
+                            <small class="text-muted">Reconnection in progress</small>
+                        </div>
+                        <div class="col-md-3">
+                            <span class="badge bg-secondary me-2">📊 No Data</span>
+                            <small class="text-muted">No reconnect attempts</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manual Reconnect Modal -->
+<div class="modal fade" id="reconnectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Manual Reconnect</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to manually trigger a reconnection for <strong id="reconnect-client-name"></strong>?</p>
+                <p class="text-muted small">This will restart the WireGuard tunnel for this client.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirm-reconnect">Confirm Reconnect</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentReconnectClientId = null;
+    let reconnectModal = null;
+
+    // Initialize modal
+    document.addEventListener('DOMContentLoaded', function() {
+        reconnectModal = new bootstrap.Modal(document.getElementById('reconnectModal'));
+    });
+
+    // Function to format timestamp
+    function formatTimestamp(timestamp) {
+        if (!timestamp) return 'Never';
+        const date = new Date(timestamp);
+        return date.toLocaleString();
+    }
+
+    // Function to format time ago
+    function formatTimeAgo(timestamp) {
+        if (!timestamp) return 'Never';
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} min ago`;
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    }
+
+    // Function to get reconnect status badge
+    function getReconnectStatusBadge(reconnectData) {
+        if (!reconnectData || !reconnectData.last_attempt) {
+            return '<span class="badge bg-secondary">📊 No Data</span>';
+        }
+
+        const lastSuccess = reconnectData.last_success;
+        const lastAttempt = reconnectData.last_attempt;
+        const attemptCount = reconnectData.attempt_count;
+        const maxAttempts = reconnectData.max_attempts;
+
+        if (lastSuccess && new Date(lastSuccess) > new Date(lastAttempt)) {
+            return '<span class="badge bg-success">✅ Success</span>';
+        } else if (attemptCount >= maxAttempts) {
+            return '<span class="badge bg-danger">❌ Failed</span>';
+        } else if (attemptCount > 0) {
+            return '<span class="badge bg-warning">⏳ Pending</span>';
+        } else {
+            return '<span class="badge bg-secondary">📊 No Data</span>';
+        }
+    }
+
+    // Function to update DDNS monitoring table
+    function updateDDNSMonitoringTable() {
+        // Fetch DNS status and reconnect status in parallel
+        Promise.all([
+            fetch('/api/dns/status').then(response => response.json()),
+            fetch('/api/auto-reconnect/status').then(response => response.json())
+        ])
+        .then(([dnsData, reconnectData]) => {
+            const tableBody = document.getElementById('ddns-monitoring-table');
+            
+            if (dnsData.status !== 'success' || reconnectData.status !== 'success') {
+                tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Error loading data</td></tr>';
+                return;
+            }
+
+            const dnsStatus = dnsData.dns_status;
+            const reconnectStatus = reconnectData.reconnect_status;
+
+            if (Object.keys(dnsStatus).length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No DDNS hostnames being monitored</td></tr>';
+                return;
+            }
+
+            tableBody.innerHTML = '';
+
+            Object.entries(dnsStatus).forEach(([hostname, dnsInfo]) => {
+                const clientId = dnsInfo.client_id;
+                const reconnectInfo = reconnectStatus[clientId] || {};
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>
+                        <strong>${dnsInfo.client_name || 'Unknown'}</strong>
+                        <br><small class="text-muted">ID: ${clientId.substring(0, 8)}...</small>
+                    </td>
+                    <td>
+                        <code>${hostname}</code>
+                        <br><small class="text-muted">Last check: ${formatTimeAgo(dnsInfo.last_check)}</small>
+                    </td>
+                    <td>
+                        <span class="badge bg-info">${dnsInfo.resolved_ip || 'Unresolved'}</span>
+                    </td>
+                    <td>
+                        <small class="text-muted">${formatTimeAgo(dnsInfo.last_ip_change)}</small>
+                    </td>
+                    <td>${getReconnectStatusBadge(reconnectInfo)}</td>
+                    <td>
+                        <small class="text-muted">${formatTimeAgo(reconnectInfo.last_attempt)}</small>
+                        ${reconnectInfo.attempt_count ? `<br><small class="text-muted">Attempts: ${reconnectInfo.attempt_count}/${reconnectInfo.max_attempts}</small>` : ''}
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button class="btn btn-outline-primary" onclick="triggerReconnect('${clientId}', '${dnsInfo.client_name || 'Unknown'}')" title="Manual Reconnect">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="btn btn-outline-warning" onclick="clearClientHistory('${clientId}')" title="Clear History">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        })
+        .catch(error => {
+            console.error('Error updating DDNS monitoring table:', error);
+            const tableBody = document.getElementById('ddns-monitoring-table');
+            tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Error loading data</td></tr>';
+        });
+    }
+
+    // Function to trigger manual reconnect
+    function triggerReconnect(clientId, clientName) {
+        currentReconnectClientId = clientId;
+        document.getElementById('reconnect-client-name').textContent = clientName;
+        reconnectModal.show();
+    }
+
+    // Function to confirm reconnect
+    document.getElementById('confirm-reconnect').addEventListener('click', function() {
+        if (!currentReconnectClientId) return;
+
+        const button = this;
+        const originalText = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Reconnecting...';
+
+        // Call the manual reconnect API endpoint
+        fetch(`/api/auto-reconnect/manual-reconnect/${currentReconnectClientId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            reconnectModal.hide();
+            
+            if (data.status === 'success') {
+                showAlert('Manual reconnection initiated successfully', 'success');
+            } else {
+                showAlert('Failed to reconnect: ' + data.message, 'danger');
+            }
+            
+            // Refresh data after a short delay
+            setTimeout(updateDDNSMonitoringTable, 2000);
+        })
+        .catch(error => {
+            console.error('Error during manual reconnect:', error);
+            button.innerHTML = originalText;
+            button.disabled = false;
+            reconnectModal.hide();
+            showAlert('Error during reconnection', 'danger');
+        });
+    });
+
+    // Function to clear client history
+    function clearClientHistory(clientId) {
+        if (!confirm('Are you sure you want to clear the reconnection history for this client?')) {
+            return;
+        }
+
+        fetch(`/api/auto-reconnect/clear-client/${clientId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showAlert('Reconnection history cleared successfully', 'success');
+                updateDDNSMonitoringTable();
+            } else {
+                showAlert('Failed to clear history: ' + data.message, 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error clearing client history:', error);
+            showAlert('Error clearing history', 'danger');
+        });
+    }
+
+    // Function to clear all history
+    function clearAllHistory() {
+        if (!confirm('Are you sure you want to clear all reconnection history?')) {
+            return;
+        }
+
+        fetch('/api/auto-reconnect/clear-history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showAlert('All reconnection history cleared successfully', 'success');
+                updateDDNSMonitoringTable();
+            } else {
+                showAlert('Failed to clear history: ' + data.message, 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error clearing all history:', error);
+            showAlert('Error clearing history', 'danger');
+        });
+    }
+
+    // Function to refresh data
+    function refreshData() {
+        updateDDNSMonitoringTable();
+        showAlert('Data refreshed', 'info');
+    }
+
+    // Function to show alerts
+    function showAlert(message, type) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        const container = document.querySelector('.container');
+        container.insertBefore(alertDiv, container.firstChild);
+        
+        // Auto-dismiss after 5 seconds
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.remove();
+            }
+        }, 5000);
+    }
+
+    // Initial load
+    updateDDNSMonitoringTable();
+
+    // Set up periodic updates (every 30 seconds)
+    setInterval(updateDDNSMonitoringTable, 30000);
+</script>
+{% endblock %} 
