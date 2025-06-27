@@ -78,13 +78,15 @@ class PendingConfigsService:
         if not config_data:
             return False, "Config not found or expired", None
         
-        # Update the config content with new subnet
+        # Find the line with AllowedIPs and replace its value
         content = config_data['content']
-        updated_content = re.sub(
-            r'AllowedIPs\s*=\s*[0-9./,\s]+',
-            f'AllowedIPs = {subnet}',
-            content
-        )
+        updated_content_lines = []
+        for line in content.splitlines():
+            if line.strip().startswith('AllowedIPs'):
+                updated_content_lines.append(f'AllowedIPs = {subnet}')
+            else:
+                updated_content_lines.append(line)
+        updated_content = "\n".join(updated_content_lines)
         
         # Validate the updated config
         from app.services.wireguard import WireGuardService

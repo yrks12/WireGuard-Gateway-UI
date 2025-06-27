@@ -93,17 +93,6 @@ def upload_config():
         if not config_content.strip():
             return jsonify({'error': 'Config file is empty'}), 400
             
-        # Check if AllowedIPs is 0.0.0.0/0
-        if 'AllowedIPs = 0.0.0.0/0' in config_content:
-            # Store as pending config
-            config_id = pending_configs.store_pending_config(config_content)
-            return jsonify({
-                'config_id': config_id,
-                'status': 'pending_subnet',
-                'message': 'Please provide specific subnet(s)'
-            }), 200
-            
-        # If not 0.0.0.0/0, validate and process normally
         # Validate file extension
         if not config_file.filename.endswith('.conf'):
             return jsonify({'error': 'Invalid file type. Please upload a .conf file'}), 400
