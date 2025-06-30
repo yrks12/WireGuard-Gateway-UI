@@ -172,9 +172,14 @@ class InterfaceRestorer:
 def main():
     """Main entry point."""
     # Get database path from environment or use default
-    db_path = os.environ.get('DATABASE_URL', '/var/lib/wireguard-gateway/wireguard.db')
+    # Fix: Use the actual database location at /opt/wireguard-gateway/instance/configs.db
+    db_path = os.environ.get('DATABASE_URL', '/opt/wireguard-gateway/instance/configs.db')
     if db_path.startswith('sqlite:///'):
         db_path = db_path[10:]  # Remove sqlite:/// prefix
+    
+    # If still pointing to old location, use the correct one
+    if db_path == '/var/lib/wireguard-gateway/wireguard.db':
+        db_path = '/opt/wireguard-gateway/instance/configs.db'
     
     logger.info(f"Using database: {db_path}")
     
