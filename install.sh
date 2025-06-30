@@ -270,6 +270,24 @@ print_status "Setting up config file permissions..."
 find $CONFIGS_DIR -type f -name "*.conf" -exec chmod 640 {} \;
 find $PENDING_DIR -type f -name "*.conf" -exec chmod 640 {} \;
 
+# Set up restoration scripts
+print_status "Setting up interface restoration scripts..."
+SCRIPTS_DIR="$INSTALL_DIR/scripts"
+mkdir -p $SCRIPTS_DIR
+chown wireguard:wireguard $SCRIPTS_DIR
+chmod 755 $SCRIPTS_DIR
+
+# Set permissions for restoration scripts
+if [ -f "$SCRIPTS_DIR/restore-interfaces.py" ]; then
+    chown wireguard:wireguard "$SCRIPTS_DIR/restore-interfaces.py"
+    chmod 755 "$SCRIPTS_DIR/restore-interfaces.py"
+fi
+
+if [ -f "$SCRIPTS_DIR/restore-interfaces.sh" ]; then
+    chown wireguard:wireguard "$SCRIPTS_DIR/restore-interfaces.sh"
+    chmod 755 "$SCRIPTS_DIR/restore-interfaces.sh"
+fi
+
 # Create systemd service
 print_header "Setting Up System Service"
 print_status "Creating systemd service file..."
@@ -286,6 +304,7 @@ Environment=INSTANCE_PATH=$INSTANCE_DIR
 Environment=DATABASE_URL=sqlite:///$DB_FILE
 Environment=LOG_PATH=$LOG_FILE
 WorkingDirectory=$INSTALL_DIR
+ExecStartPre=$INSTALL_DIR/scripts/restore-interfaces.sh
 ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/run.py
 Restart=always
 RestartSec=10
