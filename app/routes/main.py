@@ -232,6 +232,25 @@ def client(client_id):
             if not client:
                 return jsonify({'status': 'error', 'error': 'Client not found'}), 404
             
+            # Check actual system state and sync database if needed
+            interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+            
+            # Get actual WireGuard interfaces
+            try:
+                result = subprocess.run(['sudo', 'wg', 'show', 'interfaces'], capture_output=True, text=True)
+                active_interfaces = set(result.stdout.strip().split()) if result.returncode == 0 else set()
+                system_active = interface_name in active_interfaces
+                system_status = 'active' if system_active else 'inactive'
+                
+                # If database status doesn't match system state, update database
+                if client['status'] != system_status:
+                    logger.info(f"Syncing client {client['name']} status: DB={client['status']} -> System={system_status}")
+                    current_app.config_storage.update_client_status(client_id, system_status)
+                    client['status'] = system_status
+                    
+            except Exception as e:
+                logger.warning(f"Error checking system state for client {client_id}: {e}")
+            
             # Get test history
             test_history = current_app.config_storage.get_test_history(client_id)
             
