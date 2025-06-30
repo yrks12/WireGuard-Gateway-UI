@@ -178,9 +178,35 @@ def client(client_id):
     """Get or delete a client."""
     if request.method == 'DELETE':
         try:
+            # Get client info before deletion
+            client = current_app.config_storage.get_client(client_id)
+            if not client:
+                return jsonify({'status': 'error', 'error': 'Client not found'}), 404
+            
+            # First, try to deactivate the interface if it's running
+            interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+            
+            # Check if interface is active
+            try:
+                result = subprocess.run(['sudo', 'wg', 'show', interface_name], capture_output=True, text=True)
+                if result.returncode == 0:
+                    logger.info(f"Interface {interface_name} is active, bringing it down before deletion")
+                    # Try wg-quick down first
+                    down_result = subprocess.run(['sudo', 'wg-quick', 'down', client['config_path']], capture_output=True, text=True)
+                    if down_result.returncode != 0:
+                        # Fallback to ip link delete if wg-quick fails
+                        logger.warning(f"wg-quick down failed for {interface_name}, using ip link delete")
+                        subprocess.run(['sudo', 'ip', 'link', 'delete', interface_name], capture_output=True, text=True)
+            except Exception as e:
+                logger.warning(f"Error stopping interface {interface_name} before deletion: {e}")
+            
+            # Now delete from database and filesystem
             current_app.config_storage.delete_client(client_id)
+            logger.info(f"Successfully deleted client {client['name']} (ID: {client_id})")
+            
             return jsonify({'status': 'success', 'message': 'Client deleted successfully'})
         except Exception as e:
+            logger.exception(f"Error deleting client {client_id}")
             return jsonify({'status': 'error', 'error': str(e)}), 500
     else:
         try:
@@ -237,6 +263,20 @@ def activate_client(client_id):
                 'details': f'Config file {config_path} does not exist'
             }), 404
         
+        # Check if interface already exists
+        interface_name = os.path.splitext(os.path.basename(config_path))[0]
+        try:
+            check_result = subprocess.run(['sudo', 'wg', 'show', interface_name], capture_output=True, text=True)
+            if check_result.returncode == 0:
+                logger.warning(f"Interface {interface_name} already exists, updating database status")
+                current_app.config_storage.update_client_status(client_id, 'active')
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Client was already active, status updated'
+                })
+        except Exception as e:
+            logger.debug(f"Error checking existing interface {interface_name}: {e}")
+        
         logger.info(f"Attempting to activate client {client_id} with config: {config_path}")
         
         result = subprocess.run(
@@ -248,10 +288,24 @@ def activate_client(client_id):
         if result.returncode != 0:
             logger.error(f"Failed to activate client {client_id}: stdout={result.stdout}, stderr={result.stderr}")
             error_details = result.stderr if result.stderr else result.stdout
+            
+            # Provide specific error context
+            context = {}
+            if "File exists" in error_details:
+                context['conflict_type'] = 'route_conflict'
+                context['suggestion'] = 'Another interface is using the same route. Check for conflicts.'
+            elif "Permission denied" in error_details:
+                context['conflict_type'] = 'permission_error'
+                context['suggestion'] = 'Check sudo permissions for WireGuard operations.'
+            elif "No such file" in error_details:
+                context['conflict_type'] = 'missing_dependency'
+                context['suggestion'] = 'WireGuard tools may not be properly installed.'
+            
             return jsonify({
                 'error': 'Failed to activate client',
                 'details': error_details,
-                'command': f'wg-quick up {config_path}'
+                'command': f'wg-quick up {config_path}',
+                'context': context
             }), 500
         
         # Update client status
@@ -278,8 +332,25 @@ def deactivate_client(client_id):
         return jsonify({'error': 'Client not found'}), 404
     
     try:
+        # Check if interface is actually running
+        interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+        try:
+            check_result = subprocess.run(['sudo', 'wg', 'show', interface_name], capture_output=True, text=True)
+            if check_result.returncode != 0:
+                # Interface not running, just update database
+                logger.info(f"Interface {interface_name} not running, updating database status")
+                current_app.config_storage.update_client_status(client_id, 'inactive')
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Client was already inactive, status updated'
+                })
+        except Exception as e:
+            logger.debug(f"Error checking interface {interface_name}: {e}")
+        
         # Run wg-quick down with sudo
         config_path = client['config_path']
+        logger.info(f"Attempting to deactivate client {client_id} with config: {config_path}")
+        
         result = subprocess.run(
             ['sudo', 'wg-quick', 'down', config_path],
             capture_output=True,
@@ -287,20 +358,34 @@ def deactivate_client(client_id):
         )
         
         if result.returncode != 0:
-            return jsonify({
-                'error': 'Failed to deactivate client',
-                'details': result.stderr
-            }), 500
+            # If wg-quick fails, try ip link delete as fallback
+            logger.warning(f"wg-quick down failed for {interface_name}, trying ip link delete")
+            fallback_result = subprocess.run(['sudo', 'ip', 'link', 'delete', interface_name], capture_output=True, text=True)
+            
+            if fallback_result.returncode != 0:
+                logger.error(f"Failed to deactivate client {client_id}: wg-quick stderr={result.stderr}, ip link stderr={fallback_result.stderr}")
+                return jsonify({
+                    'error': 'Failed to deactivate client',
+                    'details': f"wg-quick: {result.stderr}, ip link: {fallback_result.stderr}",
+                    'command': f'wg-quick down {config_path}'
+                }), 500
+            else:
+                logger.info(f"Successfully deactivated {interface_name} using ip link delete")
         
         # Update client status
         current_app.config_storage.update_client_status(client_id, 'inactive')
+        logger.info(f"Successfully deactivated client {client_id}")
         
         return jsonify({
             'status': 'success',
             'message': 'Client deactivated successfully'
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.exception(f"Unexpected error deactivating client {client_id}")
+        return jsonify({
+            'error': 'Internal server error',
+            'details': str(e)
+        }), 500
 
 @bp.route('/clients/<client_id>/setup-forwarding', methods=['POST'])
 @login_required
@@ -508,12 +593,45 @@ def get_system_metrics():
 @bp.route('/api/clients', methods=['GET'])
 @login_required
 def get_clients():
-    """Get all clients as JSON."""
+    """Get all clients with real-time system state."""
     try:
-        clients = current_app.config_storage.list_clients()
+        # Get clients from database
+        db_clients = current_app.config_storage.list_clients()
+        
+        # Get actual WireGuard interfaces
+        try:
+            result = subprocess.run(['sudo', 'wg', 'show', 'interfaces'], capture_output=True, text=True)
+            active_interfaces = set(result.stdout.strip().split()) if result.returncode == 0 else set()
+        except Exception as e:
+            logger.warning(f"Failed to get WireGuard interfaces: {e}")
+            active_interfaces = set()
+        
+        # Merge database data with system reality
+        clients = []
+        for client in db_clients:
+            interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+            
+            # Determine actual status from system
+            system_active = interface_name in active_interfaces
+            
+            # Create enhanced client object
+            enhanced_client = client.copy()
+            enhanced_client['system_status'] = 'active' if system_active else 'inactive'
+            enhanced_client['interface_name'] = interface_name
+            
+            # If there's a mismatch, log it
+            if client['status'] != enhanced_client['system_status']:
+                logger.info(f"Status mismatch for {client['name']}: DB={client['status']}, System={enhanced_client['system_status']}")
+                # Update database to match system reality
+                current_app.config_storage.update_client_status(client['id'], enhanced_client['system_status'])
+                enhanced_client['status'] = enhanced_client['system_status']
+            
+            clients.append(enhanced_client)
+        
         return jsonify({
             'status': 'success',
-            'clients': clients
+            'clients': clients,
+            'active_interfaces': list(active_interfaces)
         })
     except Exception as e:
         logger.error(f"Error getting clients: {e}")
