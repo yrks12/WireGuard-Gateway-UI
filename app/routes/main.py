@@ -1018,22 +1018,24 @@ def get_monitoring_status():
         for client in clients:
             # Get interface name from config path
             config_path = client.get('config_path')
+            is_connected = False
+            last_handshake = None
+            
             if config_path:
                 interface = os.path.splitext(os.path.basename(config_path))[0]
-                # Get current handshake status
+                # Get current handshake status from actual system
                 peers = WireGuardMonitor.check_interface(interface)
-                last_handshake = None
-                for peer, is_connected in peers.items():
-                    if is_connected and peer in WireGuardMonitor._last_handshakes:
+                
+                # Determine connection status based on actual handshakes
+                for peer, peer_connected in peers.items():
+                    if peer_connected and peer in WireGuardMonitor._last_handshakes:
                         last_handshake = WireGuardMonitor._last_handshakes[peer]
+                        is_connected = True
                         break
-            else:
-                interface = None
-                last_handshake = None
 
             status[client['id']] = {
                 'name': client['name'],
-                'connected': client['status'] == 'active',
+                'connected': is_connected,  # Use actual system state, not database
                 'last_handshake': last_handshake.isoformat() if last_handshake else None,
                 'last_alert': None  # You can enhance this to fetch from alert history if needed
             }
