@@ -190,13 +190,31 @@ def client(client_id):
             try:
                 result = subprocess.run(['sudo', 'wg', 'show', interface_name], capture_output=True, text=True)
                 if result.returncode == 0:
-                    logger.info(f"Interface {interface_name} is active, bringing it down before deletion")
+                    logger.info(f"Interface {interface_name} is active, bringing it down and cleaning up rules before deletion")
+                    
+                    # Clean up iptables rules first (using client subnet from database)
+                    try:
+                        from app.services.iptables_manager import IptablesManager
+                        success, error = IptablesManager.cleanup_forwarding(interface_name, client['subnet'])
+                        if success:
+                            logger.info(f"Successfully cleaned up iptables rules for {interface_name}")
+                        else:
+                            logger.warning(f"Failed to cleanup iptables rules for {interface_name}: {error}")
+                    except Exception as e:
+                        logger.warning(f"Error cleaning up iptables rules for {interface_name}: {e}")
+                    
                     # Try wg-quick down first
                     down_result = subprocess.run(['sudo', 'wg-quick', 'down', client['config_path']], capture_output=True, text=True)
                     if down_result.returncode != 0:
                         # Fallback to ip link delete if wg-quick fails
                         logger.warning(f"wg-quick down failed for {interface_name}, using ip link delete")
                         subprocess.run(['sudo', 'ip', 'link', 'delete', interface_name], capture_output=True, text=True)
+                        
+                        # If we used ip link delete, we still need to clean up any remaining rules
+                        try:
+                            IptablesManager.cleanup_forwarding(interface_name, client['subnet'])
+                        except Exception as e:
+                            logger.warning(f"Additional iptables cleanup failed: {e}")
             except Exception as e:
                 logger.warning(f"Error stopping interface {interface_name} before deletion: {e}")
             
@@ -371,6 +389,17 @@ def deactivate_client(client_id):
                 }), 500
             else:
                 logger.info(f"Successfully deactivated {interface_name} using ip link delete")
+        
+        # Clean up any iptables rules that might be left behind
+        try:
+            from app.services.iptables_manager import IptablesManager
+            success, error = IptablesManager.cleanup_forwarding(interface_name, client['subnet'])
+            if success:
+                logger.info(f"Successfully cleaned up iptables rules for {interface_name}")
+            else:
+                logger.warning(f"Failed to cleanup iptables rules for {interface_name}: {error}")
+        except Exception as e:
+            logger.warning(f"Error cleaning up iptables rules for {interface_name}: {e}")
         
         # Update client status
         current_app.config_storage.update_client_status(client_id, 'inactive')

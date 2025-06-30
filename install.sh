@@ -132,6 +132,48 @@ with app.app_context():
                         if result.returncode == 0:
                             print(f"Successfully removed orphaned interface with ip link delete: {interface}")
                             orphaned_cleaned += 1
+                            
+                            # Clean up any orphaned iptables rules for this interface
+                            try:
+                                print(f"Cleaning up orphaned iptables rules for {interface}...")
+                                # Get potential subnets that might be associated with this interface
+                                # Try common patterns first, then clean up any rules containing the interface name
+                                cleanup_cmds = [
+                                    ['iptables', '-t', 'nat', '-L', 'POSTROUTING', '-v', '-n'],
+                                    ['iptables', '-L', 'FORWARD', '-v', '-n']
+                                ]
+                                
+                                for cmd in cleanup_cmds:
+                                    list_result = subprocess.run(cmd, capture_output=True, text=True)
+                                    if list_result.returncode == 0:
+                                        # Look for rules containing our interface name
+                                        for line in list_result.stdout.split('\n'):
+                                            if interface in line:
+                                                print(f"Found iptables rule for {interface}: {line.strip()}")
+                                
+                                # Remove any FORWARD rules containing the interface name
+                                forward_cleanup = subprocess.run(['iptables', '-S', 'FORWARD'], capture_output=True, text=True)
+                                if forward_cleanup.returncode == 0:
+                                    for line in forward_cleanup.stdout.split('\n'):
+                                        if interface in line and line.startswith('-A'):
+                                            # Convert -A to -D to delete the rule
+                                            delete_rule = line.replace('-A', '-D', 1)
+                                            delete_cmd = ['iptables'] + delete_rule.split()[1:]
+                                            subprocess.run(delete_cmd, capture_output=True, text=True)
+                                            print(f"Removed iptables rule: {' '.join(delete_cmd)}")
+                                
+                                # Remove any NAT rules containing the interface name  
+                                nat_cleanup = subprocess.run(['iptables', '-t', 'nat', '-S', 'POSTROUTING'], capture_output=True, text=True)
+                                if nat_cleanup.returncode == 0:
+                                    for line in nat_cleanup.stdout.split('\n'):
+                                        if interface in line and line.startswith('-A'):
+                                            delete_rule = line.replace('-A', '-D', 1)
+                                            delete_cmd = ['iptables', '-t', 'nat'] + delete_rule.split()[1:]
+                                            subprocess.run(delete_cmd, capture_output=True, text=True)
+                                            print(f"Removed NAT rule: {' '.join(delete_cmd)}")
+                                            
+                            except Exception as e:
+                                print(f"Error cleaning up iptables rules for {interface}: {e}")
                         else:
                             print(f"Failed to remove {interface} with both methods: {result.stderr}")
                 except Exception as e:
@@ -261,6 +303,25 @@ if [ "$CLEANUP_CONFLICTS" = true ]; then
     ip route show | grep -E "dev (bs_|cer_)" | while read route; do
         print_warning "Removing route: $route"
         ip route del $route 2>/dev/null || true
+    done
+    
+    # Clean up any leftover iptables rules
+    print_status "Cleaning up WireGuard iptables rules..."
+    # Get list of rules that might be related to WireGuard interfaces
+    iptables -S FORWARD | grep -E "(bs_|cer_)" | while read rule; do
+        if [[ $rule == -A* ]]; then
+            delete_rule=$(echo "$rule" | sed 's/-A /-D /')
+            print_warning "Removing iptables rule: $delete_rule"
+            iptables $delete_rule 2>/dev/null || true
+        fi
+    done
+    
+    iptables -t nat -S POSTROUTING | grep -E "(bs_|cer_)" | while read rule; do
+        if [[ $rule == -A* ]]; then
+            delete_rule=$(echo "$rule" | sed 's/-A /-D /')
+            print_warning "Removing NAT rule: $delete_rule"
+            iptables -t nat $delete_rule 2>/dev/null || true
+        fi
     done
     
     print_status "Conflict cleanup completed"
