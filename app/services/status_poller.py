@@ -2,7 +2,7 @@ import logging
 import subprocess
 import psutil
 from typing import Dict, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from app.services.ip_forwarding import IPForwardingService
 
@@ -20,13 +20,13 @@ class StatusPoller:
                 'memory_percent': psutil.virtual_memory().percent,
                 'disk_percent': psutil.disk_usage('/').percent,
                 'ip_forwarding': IPForwardingService.check_status(),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
         except Exception as e:
             logger.error(f"Error getting system metrics: {e}")
             return {
                 'error': str(e),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
     
     @staticmethod
@@ -43,14 +43,14 @@ class StatusPoller:
             if result.returncode != 0:
                 return {
                     'error': result.stderr,
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }
             
             # Parse the output
             status = {
                 'interface': interface,
                 'peers': [],
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
             
             current_peer = None
@@ -86,7 +86,7 @@ class StatusPoller:
             logger.error(f"Error getting WireGuard status: {e}")
             return {
                 'error': str(e),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
     
     @staticmethod
@@ -97,7 +97,7 @@ class StatusPoller:
             if not client:
                 return {
                     'error': 'Client not found',
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }
             
             # Get interface name from config path
@@ -111,7 +111,7 @@ class StatusPoller:
             status = {
                 'system': system_metrics,
                 'wireguard': wg_status,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
             
             return status
@@ -120,5 +120,5 @@ class StatusPoller:
             logger.error(f"Error getting all status: {e}")
             return {
                 'error': str(e),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             } 

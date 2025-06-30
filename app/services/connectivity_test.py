@@ -1,7 +1,7 @@
 import subprocess
 import logging
 from typing import Tuple, Dict, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import re
 import ipaddress
@@ -99,7 +99,7 @@ class ConnectivityTestService:
                         'success': True,
                         'target': target,
                         'latency_ms': latency,
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': datetime.now(timezone.utc).isoformat()
                     }
                 
                 # Wait before retry
@@ -113,14 +113,14 @@ class ConnectivityTestService:
                         'success': False,
                         'target': target,
                         'error': str(e),
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': datetime.now(timezone.utc).isoformat()
                     }
         
         return False, {
             'success': False,
             'target': target,
             'error': 'All ping attempts failed',
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
     
     @staticmethod
@@ -164,6 +164,6 @@ class ConnectivityTestService:
             'success': False,
             'error': 'No subnets to test',
             'target': 'N/A',
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
         return False, last_result 

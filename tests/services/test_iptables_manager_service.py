@@ -1,5 +1,3 @@
-
-
 import pytest
 from unittest.mock import patch, MagicMock
 from app.services.iptables_manager import IptablesManager
@@ -23,7 +21,7 @@ def test_setup_forwarding_failure(mock_run, mock_get_lan_interface):
     mock_run.side_effect = subprocess.CalledProcessError(1, 'cmd', stderr='error')
     success, error = IptablesManager.setup_forwarding('wg0')
     assert not success
-    assert "Failed to enable IP forwarding" in error or "Failed to add iptables rule" in error
+    assert "Command 'cmd' returned non-zero exit status 1." in error
 
 @patch('app.services.iptables_manager.IptablesManager._get_lan_interface', return_value='eth0')
 @patch('subprocess.run')

@@ -2,7 +2,7 @@ import uuid
 import json
 import re
 from typing import Dict, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import logging
 
@@ -28,12 +28,12 @@ class PendingConfigsService:
         config_path = self._get_config_path(config_id)
         
         # Calculate expiration time (24 hours from now)
-        expires_at = datetime.utcnow() + timedelta(hours=24)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
         
         # Store config with metadata
         config_data = {
             'content': config_content,
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'expires_at': expires_at.isoformat()
         }
         
@@ -55,12 +55,12 @@ class PendingConfigsService:
             # Check if expired
             if 'expires_at' not in config_data:
                 # If no expiration set, set it to 24 hours from now
-                config_data['expires_at'] = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+                config_data['expires_at'] = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
                 with open(config_path, 'w') as f:
                     json.dump(config_data, f)
             else:
                 expires_at = datetime.fromisoformat(config_data['expires_at'])
-                if datetime.utcnow() > expires_at:
+                if datetime.now(timezone.utc) > expires_at:
                     self.delete_pending_config(config_id)
                     return None
 
@@ -98,7 +98,7 @@ class PendingConfigsService:
         # Update the stored config
         config_data['content'] = updated_content
         config_data['status'] = 'validated'
-        config_data['updated_at'] = datetime.utcnow().isoformat()
+        config_data['updated_at'] = datetime.now(timezone.utc).isoformat()
         
         config_path = self._get_config_path(config_id)
         with open(config_path, 'w') as f:
@@ -117,7 +117,7 @@ class PendingConfigsService:
     def cleanup_expired_configs(self) -> int:
         """Clean up expired configs and return count of deleted configs."""
         deleted_count = 0
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         for filename in os.listdir(self.storage_dir):
             if not filename.endswith('.json'):
