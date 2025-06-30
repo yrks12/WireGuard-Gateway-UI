@@ -113,6 +113,38 @@ def create_default_dev_user(app):
         except Exception as e:
             app.logger.error(f"Failed to create default development user: {e}")
 
+def register_existing_ddns_clients(app):
+    """Register existing clients with DDNS hostnames for monitoring."""
+    try:
+        from app.services.dns_resolver import DNSResolver
+        
+        # Get all existing clients
+        clients = app.config_storage.list_clients()
+        registered_count = 0
+        
+        for client in clients:
+            try:
+                # Read config file content
+                with open(client['config_path'], 'r') as f:
+                    config_content = f.read()
+                
+                # Extract hostname
+                hostname = DNSResolver.extract_hostname_from_config(config_content)
+                if hostname:
+                    # Register for DNS monitoring
+                    DNSResolver.register_client_hostname(client['id'], hostname, client['name'])
+                    registered_count += 1
+                    app.logger.debug(f"Registered existing client {client['name']} with hostname {hostname}")
+                    
+            except Exception as e:
+                app.logger.warning(f"Failed to register client {client.get('name', 'unknown')}: {e}")
+        
+        if registered_count > 0:
+            app.logger.info(f"Registered {registered_count} existing clients with DDNS hostnames")
+        
+    except Exception as e:
+        app.logger.error(f"Failed to register existing DDNS clients: {e}")
+
 def init_dns_monitoring_and_auto_reconnect(app):
     """Initialize DNS monitoring and auto-reconnect system."""
     try:
@@ -127,6 +159,9 @@ def init_dns_monitoring_and_auto_reconnect(app):
         
         # Register the callback
         DNSResolver.set_dns_change_callback(handle_dns_changes)
+        
+        # Register existing clients with DDNS hostnames
+        register_existing_ddns_clients(app)
         
         # Start DNS monitoring
         DNSResolver.start_monitoring()
