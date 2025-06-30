@@ -40,6 +40,7 @@ SKIP_PIP=false
 SKIP_DEPENDENCIES=false
 DEFAULT_USERNAME="admin"
 DEFAULT_PASSWORD="admin123"  # This will be forced to change on first login
+MIGRATE_ONLY=false
 
 for arg in "$@"
 do
@@ -60,8 +61,61 @@ do
         print_warning "Skipping all installations"
         shift
         ;;
+        --migrate)
+        MIGRATE_ONLY=true
+        print_warning "Running database migration only"
+        shift
+        ;;
     esac
 done
+
+# Handle migration-only mode
+if [ "$MIGRATE_ONLY" = true ]; then
+    print_header "Database Migration"
+    
+    # Check if the application is installed
+    if [ ! -d "/opt/wireguard-gateway" ]; then
+        print_error "WireGuard Gateway is not installed. Please run installation first."
+        exit 1
+    fi
+    
+    # Run migration script
+    print_status "Running database migration..."
+    /opt/wireguard-gateway/venv/bin/python << 'EOF'
+import sys
+sys.path.insert(0, '/opt/wireguard-gateway')
+from app import create_app, db
+from app.models.client import Client
+import subprocess
+
+app = create_app()
+with app.app_context():
+    # Get all clients from database
+    all_clients = Client.query.all()
+    
+    # Get active WireGuard interfaces
+    try:
+        result = subprocess.run(['wg', 'show', 'interfaces'], capture_output=True, text=True)
+        active_interfaces = result.stdout.strip().split() if result.returncode == 0 else []
+    except:
+        active_interfaces = []
+    
+    # Clean up stale clients
+    stale_count = 0
+    for client in all_clients:
+        # Check if the client's interface exists
+        if client.name not in active_interfaces and client.status == 'active':
+            print(f"Marking stale client as inactive: {client.name}")
+            client.status = 'inactive'
+            stale_count += 1
+    
+    db.session.commit()
+    print(f"Migration completed. Updated {stale_count} stale clients.")
+EOF
+    
+    print_status "Database migration completed!"
+    exit 0
+fi
 
 print_header "WireGuard Gateway Installation"
 print_status "Starting installation process..."
