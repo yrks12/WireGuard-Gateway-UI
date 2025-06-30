@@ -120,14 +120,22 @@ with app.app_context():
             if interface not in db_interface_names:
                 print(f"Found orphaned interface: {interface} (not in database)")
                 try:
+                    # First try wg-quick down (in case config exists)
                     result = subprocess.run(['wg-quick', 'down', interface], capture_output=True, text=True)
                     if result.returncode == 0:
-                        print(f"Successfully brought down orphaned interface: {interface}")
+                        print(f"Successfully brought down orphaned interface with wg-quick: {interface}")
                         orphaned_cleaned += 1
                     else:
-                        print(f"Failed to bring down {interface}: {result.stderr}")
+                        # If wg-quick fails (no config file), use ip link delete
+                        print(f"wg-quick failed for {interface}, trying ip link delete...")
+                        result = subprocess.run(['ip', 'link', 'delete', interface], capture_output=True, text=True)
+                        if result.returncode == 0:
+                            print(f"Successfully removed orphaned interface with ip link delete: {interface}")
+                            orphaned_cleaned += 1
+                        else:
+                            print(f"Failed to remove {interface} with both methods: {result.stderr}")
                 except Exception as e:
-                    print(f"Error bringing down {interface}: {e}")
+                    print(f"Error removing {interface}: {e}")
     
     # Step 3: Get all clients from database
     all_clients = Client.query.all()
@@ -237,7 +245,11 @@ if [ "$CLEANUP_CONFLICTS" = true ]; then
             print_warning "Found active WireGuard interfaces: $ACTIVE_INTERFACES"
             for interface in $ACTIVE_INTERFACES; do
                 print_status "Bringing down interface: $interface"
-                wg-quick down "$interface" 2>/dev/null || true
+                # Try wg-quick first, then ip link delete if that fails
+                if ! wg-quick down "$interface" 2>/dev/null; then
+                    print_warning "wg-quick failed for $interface, using ip link delete"
+                    ip link delete "$interface" 2>/dev/null || true
+                fi
             done
         else
             print_status "No active WireGuard interfaces found"
@@ -377,6 +389,8 @@ wireguard ALL=(ALL) NOPASSWD: /usr/bin/ping -c 1 -W 2 *
 wireguard ALL=(ALL) NOPASSWD: /usr/bin/wg show *
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/ip route show default
 wireguard ALL=(ALL) NOPASSWD: /usr/sbin/ip addr show *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/ip link delete *
+wireguard ALL=(ALL) NOPASSWD: /usr/sbin/ip route show
 wireguard ALL=(ALL) NOPASSWD: /sbin/reboot
 EOF
 chmod 440 /etc/sudoers.d/wireguard
