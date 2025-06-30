@@ -48,7 +48,7 @@ class InterfaceRestorer:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
                     SELECT id, name, config_path, subnet, public_key, status
-                    FROM client
+                    FROM clients
                     WHERE status = 'active'
                 """)
                 
@@ -125,7 +125,7 @@ class InterfaceRestorer:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
-                    UPDATE client 
+                    UPDATE clients 
                     SET status = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 """, (status, client_id))
