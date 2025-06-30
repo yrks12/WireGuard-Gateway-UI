@@ -398,6 +398,14 @@ cp -r scripts $INSTALL_DIR/
 cp requirements.txt $INSTALL_DIR/
 cp run.py $INSTALL_DIR/
 
+# Ensure the restore script is copied properly
+if [ -f "scripts/restore-interfaces.py" ]; then
+    cp scripts/restore-interfaces.py $INSTALL_DIR/scripts/
+    print_status "Copied restore-interfaces.py script"
+else
+    print_warning "restore-interfaces.py not found in scripts directory"
+fi
+
 # Create virtual environment and install dependencies
 print_header "Setting Up Python Environment"
 print_status "Creating Python virtual environment..."
