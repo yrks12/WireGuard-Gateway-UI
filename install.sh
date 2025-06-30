@@ -41,6 +41,7 @@ SKIP_DEPENDENCIES=false
 DEFAULT_USERNAME="admin"
 DEFAULT_PASSWORD="admin123"  # This will be forced to change on first login
 MIGRATE_ONLY=false
+CLEANUP_CONFLICTS=false
 
 for arg in "$@"
 do
@@ -66,6 +67,11 @@ do
         print_warning "Running database migration only"
         shift
         ;;
+        --cleanup-conflicts)
+        CLEANUP_CONFLICTS=true
+        print_warning "Will clean up WireGuard conflicts during installation"
+        shift
+        ;;
     esac
 done
 
@@ -80,37 +86,121 @@ if [ "$MIGRATE_ONLY" = true ]; then
     fi
     
     # Run migration script
-    print_status "Running database migration..."
+    print_status "Running database migration and conflict cleanup..."
     /opt/wireguard-gateway/venv/bin/python << 'EOF'
 import sys
 sys.path.insert(0, '/opt/wireguard-gateway')
 from app import create_app, db
 from app.models.client import Client
 import subprocess
+import os
 
 app = create_app()
 with app.app_context():
-    # Get all clients from database
-    all_clients = Client.query.all()
+    print("=== WireGuard Interface and Database Cleanup ===")
     
-    # Get active WireGuard interfaces
+    # Step 1: Get active WireGuard interfaces
     try:
         result = subprocess.run(['wg', 'show', 'interfaces'], capture_output=True, text=True)
         active_interfaces = result.stdout.strip().split() if result.returncode == 0 else []
-    except:
+        print(f"Found {len(active_interfaces)} active WireGuard interfaces: {active_interfaces}")
+    except Exception as e:
+        print(f"Error getting WireGuard interfaces: {e}")
         active_interfaces = []
     
-    # Clean up stale clients
+    # Step 2: Clean up orphaned interfaces (active but not in database)
+    orphaned_cleaned = 0
+    if active_interfaces:
+        from app.services.config_storage import ConfigStorageService
+        config_storage = ConfigStorageService('/opt/wireguard-gateway/instance/configs', '/opt/wireguard-gateway/instance/configs.db')
+        db_clients = config_storage.list_clients()
+        db_interface_names = [os.path.splitext(os.path.basename(client['config_path']))[0] for client in db_clients]
+        
+        for interface in active_interfaces:
+            if interface not in db_interface_names:
+                print(f"Found orphaned interface: {interface} (not in database)")
+                try:
+                    result = subprocess.run(['wg-quick', 'down', interface], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        print(f"Successfully brought down orphaned interface: {interface}")
+                        orphaned_cleaned += 1
+                    else:
+                        print(f"Failed to bring down {interface}: {result.stderr}")
+                except Exception as e:
+                    print(f"Error bringing down {interface}: {e}")
+    
+    # Step 3: Get all clients from database
+    all_clients = Client.query.all()
+    print(f"Found {len(all_clients)} clients in database")
+    
+    # Step 4: Clean up stale database entries
     stale_count = 0
     for client in all_clients:
         # Check if the client's interface exists
         if client.name not in active_interfaces and client.status == 'active':
-            print(f"Marking stale client as inactive: {client.name}")
+            print(f"Marking stale database client as inactive: {client.name}")
             client.status = 'inactive'
             stale_count += 1
     
+    # Step 5: Check for duplicate clients with same public key
+    from collections import defaultdict
+    clients_by_key = defaultdict(list)
+    for client in all_clients:
+        clients_by_key[client.public_key].append(client)
+    
+    duplicates_removed = 0
+    for public_key, client_list in clients_by_key.items():
+        if len(client_list) > 1:
+            print(f"Found {len(client_list)} clients with same public key {public_key[:16]}...")
+            # Keep the most recent, remove others
+            client_list.sort(key=lambda x: x.created_at, reverse=True)
+            to_keep = client_list[0]
+            to_remove = client_list[1:]
+            
+            print(f"Keeping: {to_keep.name} (created: {to_keep.created_at})")
+            for client in to_remove:
+                print(f"Removing duplicate: {client.name} (created: {client.created_at})")
+                # Remove config file if it exists
+                if os.path.exists(client.config_path):
+                    try:
+                        os.remove(client.config_path)
+                        print(f"Removed config file: {client.config_path}")
+                    except Exception as e:
+                        print(f"Error removing config file {client.config_path}: {e}")
+                
+                db.session.delete(client)
+                duplicates_removed += 1
+    
+    # Step 6: Check for routing conflicts
+    route_conflicts = 0
+    try:
+        # Get current routes
+        result = subprocess.run(['ip', 'route', 'show'], capture_output=True, text=True)
+        if result.returncode == 0:
+            routes = result.stdout
+            # Look for routes that might conflict with common WireGuard subnets
+            problem_routes = []
+            for line in routes.split('\n'):
+                if 'dev bs_' in line or 'dev cer_' in line:
+                    problem_routes.append(line.strip())
+            
+            if problem_routes:
+                print(f"Found {len(problem_routes)} existing WireGuard routes:")
+                for route in problem_routes:
+                    print(f"  {route}")
+                route_conflicts = len(problem_routes)
+    except Exception as e:
+        print(f"Error checking routes: {e}")
+    
+    # Commit database changes
     db.session.commit()
-    print(f"Migration completed. Updated {stale_count} stale clients.")
+    
+    print("\n=== Cleanup Summary ===")
+    print(f"Orphaned interfaces cleaned: {orphaned_cleaned}")
+    print(f"Stale database entries updated: {stale_count}")
+    print(f"Duplicate clients removed: {duplicates_removed}")
+    print(f"Existing WireGuard routes found: {route_conflicts}")
+    print("Migration and cleanup completed!")
 EOF
     
     print_status "Database migration completed!"
@@ -134,6 +224,35 @@ fi
 usermod -a -G sudo wireguard
 usermod -a -G netdev wireguard
 usermod -a -G wireguard root
+
+# Clean up existing WireGuard conflicts if requested
+if [ "$CLEANUP_CONFLICTS" = true ]; then
+    print_header "Cleaning Up WireGuard Conflicts"
+    print_status "Stopping any existing WireGuard interfaces..."
+    
+    # Get list of active WireGuard interfaces
+    if command -v wg >/dev/null 2>&1; then
+        ACTIVE_INTERFACES=$(wg show interfaces 2>/dev/null || true)
+        if [ ! -z "$ACTIVE_INTERFACES" ]; then
+            print_warning "Found active WireGuard interfaces: $ACTIVE_INTERFACES"
+            for interface in $ACTIVE_INTERFACES; do
+                print_status "Bringing down interface: $interface"
+                wg-quick down "$interface" 2>/dev/null || true
+            done
+        else
+            print_status "No active WireGuard interfaces found"
+        fi
+    fi
+    
+    # Clean up any leftover routes
+    print_status "Cleaning up WireGuard routes..."
+    ip route show | grep -E "dev (bs_|cer_)" | while read route; do
+        print_warning "Removing route: $route"
+        ip route del $route 2>/dev/null || true
+    done
+    
+    print_status "Conflict cleanup completed"
+fi
 
 # Install required packages if not skipped
 if [ "$SKIP_DEPENDENCIES" = false ]; then
