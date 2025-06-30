@@ -4,6 +4,12 @@
 
 set -e
 
+# Exit early if running for the first time (no interfaces to restore)
+if [ ! -d "/opt/wireguard-gateway/instance/configs" ] || [ -z "$(ls -A /opt/wireguard-gateway/instance/configs 2>/dev/null)" ]; then
+    echo "$(date): No configs directory or no configs to restore, skipping..." >> "/var/log/wireguard-gateway/restore.log" 2>/dev/null || true
+    exit 0
+fi
+
 # Define paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
