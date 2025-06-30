@@ -348,6 +348,18 @@ def activate_client(client_id):
         # Update client status
         current_app.config_storage.update_client_status(client_id, 'active')
         
+        # Set up iptables forwarding rules automatically
+        try:
+            logger.info(f"Setting up iptables rules for {client_id} with interface {interface_name}")
+            success, error = IptablesManager.setup_forwarding(interface_name, client['subnet'])
+            if not success:
+                logger.warning(f"Failed to set up iptables rules for {client_id}: {error}")
+                # Continue anyway - client is active, just need manual rule setup
+            else:
+                logger.info(f"Successfully set up iptables rules for {client_id}")
+        except Exception as e:
+            logger.warning(f"Exception setting up iptables for {client_id}: {e}")
+        
         # Trigger initial handshake by pinging client's internal IP
         try:
             # Extract client's actual IP from the WireGuard config file
