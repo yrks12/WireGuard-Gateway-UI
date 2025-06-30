@@ -1024,6 +1024,54 @@ def manual_reconnect_client(client_id):
             'message': str(e)
         }), 500
 
+@bp.route('/api/system/cleanup-duplicates', methods=['POST'])
+@login_required  
+def cleanup_duplicate_clients():
+    """Remove duplicate clients with the same public key, keeping the most recent."""
+    try:
+        clients = current_app.config_storage.list_clients()
+        
+        # Group clients by public key
+        clients_by_key = {}
+        for client in clients:
+            key = client['public_key']
+            if key not in clients_by_key:
+                clients_by_key[key] = []
+            clients_by_key[key].append(client)
+        
+        # Find duplicates
+        duplicates_removed = 0
+        for public_key, client_list in clients_by_key.items():
+            if len(client_list) > 1:
+                # Sort by created_at, keep the most recent
+                client_list.sort(key=lambda x: x['created_at'], reverse=True)
+                to_keep = client_list[0]
+                to_remove = client_list[1:]
+                
+                logger.info(f"Found {len(client_list)} clients with same public key {public_key[:16]}...")
+                logger.info(f"Keeping: {to_keep['name']} (created: {to_keep['created_at']})")
+                
+                for client in to_remove:
+                    logger.info(f"Removing duplicate: {client['name']} (created: {client['created_at']})")
+                    try:
+                        current_app.config_storage.delete_client(client['id'])
+                        duplicates_removed += 1
+                    except Exception as e:
+                        logger.error(f"Failed to delete duplicate client {client['id']}: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Removed {duplicates_removed} duplicate clients',
+            'duplicates_removed': duplicates_removed
+        })
+        
+    except Exception as e:
+        logger.exception("Error cleaning up duplicate clients")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 @bp.route('/api/system/sync', methods=['POST'])
 @login_required
 def sync_system_state():

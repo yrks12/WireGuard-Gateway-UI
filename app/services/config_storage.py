@@ -59,6 +59,16 @@ class ConfigStorageService:
             original_filename: The original filename of the uploaded config (optional)
         Returns: (client_id, metadata)
         """
+        # Check for duplicate public key
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT id, name FROM clients WHERE public_key = ?
+            """, (public_key,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                raise ValueError(f"A client with this public key already exists: {existing[1]} (ID: {existing[0]})")
+        
         # Generate unique client ID
         client_id = str(uuid.uuid4())
         

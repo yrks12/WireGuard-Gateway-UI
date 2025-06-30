@@ -395,9 +395,15 @@
     // Handle form submission
     document.getElementById('uploadForm').addEventListener('submit', function(e) {
         e.preventDefault();
-        const formData = new FormData(this);
+        
         const submitButton = this.querySelector('button[type="submit"]');
         
+        // Prevent double submission
+        if (submitButton.disabled) {
+            return;
+        }
+        
+        const formData = new FormData(this);
         submitButton.disabled = true;
         submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Uploading...';
         
