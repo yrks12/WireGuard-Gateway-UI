@@ -394,6 +394,7 @@ chmod 750 /etc/wireguard
 print_header "Installing Application Files"
 print_status "Copying application files to $INSTALL_DIR..."
 cp -r app $INSTALL_DIR/
+cp -r scripts $INSTALL_DIR/
 cp requirements.txt $INSTALL_DIR/
 cp run.py $INSTALL_DIR/
 
