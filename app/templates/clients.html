@@ -118,7 +118,10 @@
 
 {% block extra_js %}
 <script>
-    let currentClientId = null;
+    // Guard against duplicate declarations
+    if (typeof currentClientId === 'undefined') {
+        var currentClientId = null;
+    }
 
     // Function to show alert
     function showAlert(type, message) {
