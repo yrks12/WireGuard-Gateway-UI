@@ -61,15 +61,15 @@ class IptablesManager:
             if result.returncode != 0:
                 return False, f"Failed to enable IP forwarding: {result.stderr}"
 
-            # Add NAT rules for specific client subnet
+            # Add NAT rules for WireGuard interface (like original: -o SITEB -j MASQUERADE)
             nat_cmds = [
-                ['sudo', 'iptables', '-t', 'nat', '-A', 'POSTROUTING', '-s', client_subnet, '-o', lan_interface, '-j', 'MASQUERADE']
+                ['sudo', 'iptables', '-t', 'nat', '-A', 'POSTROUTING', '-o', client_interface, '-j', 'MASQUERADE']
             ]
             
-            # Add forwarding rules for specific client subnet
+            # Add forwarding rules for WireGuard interface (like original setup)
             forward_cmds = [
-                ['sudo', 'iptables', '-A', 'FORWARD', '-s', client_subnet, '-i', client_interface, '-o', lan_interface, '-j', 'ACCEPT'],
-                ['sudo', 'iptables', '-A', 'FORWARD', '-d', client_subnet, '-i', lan_interface, '-o', client_interface, '-m', 'state', '--state', 'RELATED,ESTABLISHED', '-j', 'ACCEPT']
+                ['sudo', 'iptables', '-A', 'FORWARD', '-i', lan_interface, '-o', client_interface, '-j', 'ACCEPT'],
+                ['sudo', 'iptables', '-A', 'FORWARD', '-i', client_interface, '-o', lan_interface, '-m', 'state', '--state', 'RELATED,ESTABLISHED', '-j', 'ACCEPT']
             ]
 
             # Execute all commands
@@ -99,15 +99,15 @@ class IptablesManager:
             if not lan_interface:
                 return False, "Could not determine LAN interface"
 
-            # Remove NAT rules for specific client subnet
+            # Remove NAT rules for WireGuard interface
             nat_cmds = [
-                ['sudo', 'iptables', '-t', 'nat', '-D', 'POSTROUTING', '-s', client_subnet, '-o', lan_interface, '-j', 'MASQUERADE']
+                ['sudo', 'iptables', '-t', 'nat', '-D', 'POSTROUTING', '-o', client_interface, '-j', 'MASQUERADE']
             ]
             
-            # Remove forwarding rules for specific client subnet
+            # Remove forwarding rules for WireGuard interface
             forward_cmds = [
-                ['sudo', 'iptables', '-D', 'FORWARD', '-s', client_subnet, '-i', client_interface, '-o', lan_interface, '-j', 'ACCEPT'],
-                ['sudo', 'iptables', '-D', 'FORWARD', '-d', client_subnet, '-i', lan_interface, '-o', client_interface, '-m', 'state', '--state', 'RELATED,ESTABLISHED', '-j', 'ACCEPT']
+                ['sudo', 'iptables', '-D', 'FORWARD', '-i', lan_interface, '-o', client_interface, '-j', 'ACCEPT'],
+                ['sudo', 'iptables', '-D', 'FORWARD', '-i', client_interface, '-o', lan_interface, '-m', 'state', '--state', 'RELATED,ESTABLISHED', '-j', 'ACCEPT']
             ]
 
             # Execute all commands
