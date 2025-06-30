@@ -228,6 +228,17 @@ def activate_client(client_id):
         
         # Run wg-quick up with sudo
         config_path = client['config_path']
+        
+        # Check if config file exists
+        if not os.path.exists(config_path):
+            logger.error(f"Config file not found: {config_path}")
+            return jsonify({
+                'error': 'Configuration file not found',
+                'details': f'Config file {config_path} does not exist'
+            }), 404
+        
+        logger.info(f"Attempting to activate client {client_id} with config: {config_path}")
+        
         result = subprocess.run(
             ['sudo', 'wg-quick', 'up', config_path],
             capture_output=True,
@@ -235,20 +246,28 @@ def activate_client(client_id):
         )
         
         if result.returncode != 0:
+            logger.error(f"Failed to activate client {client_id}: stdout={result.stdout}, stderr={result.stderr}")
+            error_details = result.stderr if result.stderr else result.stdout
             return jsonify({
                 'error': 'Failed to activate client',
-                'details': result.stderr
+                'details': error_details,
+                'command': f'wg-quick up {config_path}'
             }), 500
         
         # Update client status
         current_app.config_storage.update_client_status(client_id, 'active')
+        logger.info(f"Successfully activated client {client_id}")
         
         return jsonify({
             'status': 'success',
             'message': 'Client activated successfully'
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.exception(f"Unexpected error activating client {client_id}")
+        return jsonify({
+            'error': 'Internal server error',
+            'details': str(e)
+        }), 500
 
 @bp.route('/clients/<client_id>/deactivate', methods=['POST'])
 @login_required
@@ -1000,6 +1019,54 @@ def manual_reconnect_client(client_id):
             
     except Exception as e:
         logger.error(f"Error during manual reconnection of client {client_id}: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@bp.route('/api/system/sync', methods=['POST'])
+@login_required
+def sync_system_state():
+    """Synchronize database state with actual WireGuard interfaces."""
+    try:
+        # Get actual WireGuard interfaces
+        result = subprocess.run(
+            ['sudo', 'wg', 'show', 'interfaces'],
+            capture_output=True,
+            text=True
+        )
+        
+        active_interfaces = set()
+        if result.returncode == 0:
+            active_interfaces = set(result.stdout.strip().split())
+        
+        # Get all clients from database
+        clients = current_app.config_storage.list_clients()
+        
+        updated_count = 0
+        for client in clients:
+            # Get interface name from config path
+            interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
+            
+            # Check if interface is actually active
+            is_active = interface_name in active_interfaces
+            expected_status = 'active' if is_active else 'inactive'
+            
+            # Update status if it doesn't match
+            if client['status'] != expected_status:
+                current_app.config_storage.update_client_status(client['id'], expected_status)
+                updated_count += 1
+                logger.info(f"Updated client {client['name']} status from {client['status']} to {expected_status}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Synchronized system state. Updated {updated_count} clients.',
+            'active_interfaces': list(active_interfaces),
+            'total_clients': len(clients)
+        })
+        
+    except Exception as e:
+        logger.exception("Error synchronizing system state")
         return jsonify({
             'status': 'error',
             'message': str(e)

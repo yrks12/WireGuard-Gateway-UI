@@ -42,11 +42,20 @@ def monitor_wireguard(app):
                             # Update client status in storage
                             app.config_storage.update_client_status(client['id'], new_status, last_handshake)
                         else:
-                            # No peers found, mark as inactive
-                            app.config_storage.update_client_status(client['id'], 'inactive')
+                            # No peers found - interface doesn't exist, mark as inactive
+                            if client['status'] != 'inactive':
+                                logger.info(f"Interface {interface_name} not found, marking client {client.get('name', 'Unknown')} as inactive")
+                                app.config_storage.update_client_status(client['id'], 'inactive')
                         
                     except Exception as e:
-                        logger.error(f"Error updating status for client {client.get('name', 'Unknown')}: {str(e)}")
+                        # Log error but don't spam if it's the same "No such device" error
+                        error_msg = str(e)
+                        if "No such device" not in error_msg:
+                            logger.error(f"Error updating status for client {client.get('name', 'Unknown')}: {error_msg}")
+                        elif client['status'] != 'inactive':
+                            # Only log "No such device" if the client is not already marked inactive
+                            logger.info(f"Interface for client {client.get('name', 'Unknown')} not found, marking as inactive")
+                            app.config_storage.update_client_status(client['id'], 'inactive')
                 
         except Exception as e:
             logger.error(f"Error in monitoring task: {str(e)}")
