@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Monitoring Logs{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>Monitoring Logs</h2>
+                <div>
+                    <button class="btn btn-outline-secondary me-2" onclick="refreshLogs()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Filters</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <label for="client-filter" class="form-label">Client</label>
+                    <select id="client-filter" class="form-select" onchange="applyFilters()">
+                        <option value="">All Clients</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="event-type-filter" class="form-label">Event Type</label>
+                    <select id="event-type-filter" class="form-select" onchange="applyFilters()">
+                        <option value="">All Events</option>
+                        <option value="disconnect_alert">Disconnect Alerts</option>
+                        <option value="dns_ip_change">DNS IP Changes</option>
+                        <option value="reconnect_attempt">Reconnect Attempts</option>
+                        <option value="reconnect_success">Reconnect Success</option>
+                        <option value="reconnect_failed">Reconnect Failed</option>
+                        <option value="alert_error">Alert Errors</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="limit-filter" class="form-label">Show Last</label>
+                    <select id="limit-filter" class="form-select" onchange="applyFilters()">
+                        <option value="50">50 entries</option>
+                        <option value="100" selected>100 entries</option>
+                        <option value="200">200 entries</option>
+                        <option value="500">500 entries</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Event Log</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Client</th>
+                            <th>Event Type</th>
+                            <th>Message</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-table-body">
+                        <tr>
+                            <td colspan="5" class="text-center">Loading monitoring logs...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    let allLogs = [];
+    let clients = [];
+
+    // Load monitoring logs
+    function loadMonitoringLogs() {
+        const clientId = document.getElementById('client-filter').value;
+        const limit = document.getElementById('limit-filter').value;
+        
+        let url = `/api/monitoring/logs?limit=${limit}`;
+        if (clientId) {
+            url += `&client_id=${clientId}`;
+        }
+        
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    allLogs = data.logs;
+                    displayLogs(allLogs);
+                } else {
+                    showError('Failed to load monitoring logs: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error loading monitoring logs:', error);
+                showError('Failed to load monitoring logs: ' + error.message);
+            });
+    }
+
+    // Display logs in table
+    function displayLogs(logs) {
+        const tbody = document.getElementById('logs-table-body');
+        tbody.innerHTML = '';
+        
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">No monitoring logs found</td></tr>';
+            return;
+        }
+        
+        logs.forEach(log => {
+            const row = document.createElement('tr');
+            
+            // Event type badge color mapping
+            const eventTypeColors = {
+                'disconnect_alert': 'bg-warning',
+                'dns_ip_change': 'bg-info',
+                'reconnect_attempt': 'bg-primary',
+                'reconnect_success': 'bg-success',
+                'reconnect_failed': 'bg-danger',
+                'alert_error': 'bg-danger'
+            };
+            
+            const badgeColor = eventTypeColors[log.event_type] || 'bg-secondary';
+            
+            row.innerHTML = `
+                <td>${new Date(log.timestamp).toLocaleString()}</td>
+                <td>${log.client_name || 'Unknown'}</td>
+                <td><span class="badge ${badgeColor}">${log.event_type.replace('_', ' ')}</span></td>
+                <td>${log.message}</td>
+                <td>${log.details || '-'}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    // Apply filters
+    function applyFilters() {
+        const eventTypeFilter = document.getElementById('event-type-filter').value;
+        
+        let filteredLogs = allLogs;
+        
+        if (eventTypeFilter) {
+            filteredLogs = filteredLogs.filter(log => log.event_type === eventTypeFilter);
+        }
+        
+        displayLogs(filteredLogs);
+    }
+
+    // Refresh logs
+    function refreshLogs() {
+        loadMonitoringLogs();
+    }
+
+    // Load clients for filter dropdown
+    function loadClients() {
+        fetch('/api/clients')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    clients = data.clients;
+                    populateClientFilter();
+                }
+            })
+            .catch(error => {
+                console.error('Error loading clients:', error);
+            });
+    }
+
+    // Populate client filter dropdown
+    function populateClientFilter() {
+        const select = document.getElementById('client-filter');
+        // Clear existing options except "All Clients"
+        select.innerHTML = '<option value="">All Clients</option>';
+        
+        clients.forEach(client => {
+            const option = document.createElement('option');
+            option.value = client.id;
+            option.textContent = client.name;
+            select.appendChild(option);
+        });
+    }
+
+    // Show error message
+    function showError(message) {
+        const tbody = document.getElementById('logs-table-body');
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${message}</td></tr>`;
+    }
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+        loadClients();
+        loadMonitoringLogs();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadMonitoringLogs, 30000);
+    });
+</script>
+{% endblock %}
+{% endblock %}

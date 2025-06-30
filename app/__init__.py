@@ -160,6 +160,9 @@ def init_dns_monitoring_and_auto_reconnect(app):
         # Register the callback
         DNSResolver.set_dns_change_callback(handle_dns_changes)
         
+        # Set config storage for logging
+        DNSResolver.set_config_storage(app.config_storage)
+        
         # Register existing clients with DDNS hostnames
         register_existing_ddns_clients(app)
         

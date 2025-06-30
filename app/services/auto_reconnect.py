@@ -93,6 +93,13 @@ class AutoReconnectService:
         
         logger.info(f"Attempting to reconnect client {client_id}")
         
+        # Log monitoring event
+        config_storage.log_monitoring_event(
+            client_id, client['name'], "reconnect_attempt",
+            f"Starting auto-reconnect attempt", 
+            f"Trigger: DNS IP change"
+        )
+        
         try:
             # Step 1: Deactivate the client
             logger.info(f"Deactivating client {client_id}")
@@ -114,11 +121,60 @@ class AutoReconnectService:
             # Step 4: Update client status
             config_storage.update_client_status(client_id, 'active')
             
+            # Step 5: Trigger initial handshake by pinging client
+            try:
+                import subprocess
+                import re
+                
+                # Extract client's actual IP from the WireGuard config file
+                with open(config_path, 'r') as f:
+                    config_content = f.read()
+                
+                # Look for Address line in [Interface] section
+                address_match = re.search(r'Address\s*=\s*([^/\s,]+)', config_content)
+                if address_match:
+                    client_ip = address_match.group(1).strip()
+                    logger.info(f"Triggering handshake for reconnected client {client_id} by pinging {client_ip}")
+                    
+                    ping_result = subprocess.run(
+                        ['sudo', 'ping', '-c', '1', '-W', '2', client_ip],
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if ping_result.returncode == 0:
+                        logger.info(f"Successfully pinged reconnected client {client_id} - handshake established")
+                        config_storage.log_monitoring_event(
+                            client_id, client['name'], "reconnect_handshake_established",
+                            f"Handshake established after auto-reconnect",
+                            f"Pinged {client_ip}"
+                        )
+                    else:
+                        logger.warning(f"Ping to reconnected client {client_id} failed")
+                else:
+                    logger.warning(f"Could not extract client IP from config for reconnected client {client_id}")
+            except Exception as ping_error:
+                logger.warning(f"Error triggering handshake for reconnected client {client_id}: {ping_error}")
+            
             logger.info(f"Successfully reconnected client {client_id}")
+            
+            # Log success
+            config_storage.log_monitoring_event(
+                client_id, client['name'], "reconnect_success",
+                f"Auto-reconnect completed successfully", 
+                f"Client reactivated after DNS IP change"
+            )
             return True
             
         except Exception as e:
             logger.error(f"Error during reconnection of client {client_id}: {e}")
+            
+            # Log failure
+            config_storage.log_monitoring_event(
+                client_id, client['name'], "reconnect_failed",
+                f"Auto-reconnect failed: {str(e)}", 
+                f"Error during reconnection process"
+            )
             return False
     
     @classmethod

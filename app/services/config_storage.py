@@ -48,6 +48,19 @@ class ConfigStorageService:
                     FOREIGN KEY (client_id) REFERENCES clients (id)
                 )
             """)
+            
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS monitoring_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    client_id TEXT,
+                    client_name TEXT,
+                    event_type TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    details TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (client_id) REFERENCES clients (id)
+                )
+            """)
     
     def store_config(self, config_content: str, subnet: str, public_key: str, original_filename: str = None) -> Tuple[str, Dict]:
         """
@@ -269,5 +282,58 @@ class ConfigStorageService:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM clients WHERE id = ?", (client_id,))
             conn.execute("DELETE FROM test_history WHERE client_id = ?", (client_id,))
+            conn.execute("DELETE FROM monitoring_logs WHERE client_id = ?", (client_id,))
             
-        return True 
+        return True
+    
+    def log_monitoring_event(self, client_id: str, client_name: str, event_type: str, message: str, details: str = None) -> None:
+        """Log a monitoring event for a client."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    INSERT INTO monitoring_logs (client_id, client_name, event_type, message, details)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (client_id, client_name, event_type, message, details))
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to log monitoring event: {e}")
+    
+    def get_monitoring_logs(self, client_id: str = None, limit: int = 100) -> List[Dict]:
+        """Get monitoring logs, optionally filtered by client_id."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                if client_id:
+                    cursor = conn.execute("""
+                        SELECT id, client_id, client_name, event_type, message, details, timestamp
+                        FROM monitoring_logs 
+                        WHERE client_id = ?
+                        ORDER BY timestamp DESC 
+                        LIMIT ?
+                    """, (client_id, limit))
+                else:
+                    cursor = conn.execute("""
+                        SELECT id, client_id, client_name, event_type, message, details, timestamp
+                        FROM monitoring_logs 
+                        ORDER BY timestamp DESC 
+                        LIMIT ?
+                    """, (limit,))
+                
+                logs = []
+                for row in cursor.fetchall():
+                    logs.append({
+                        'id': row[0],
+                        'client_id': row[1],
+                        'client_name': row[2],
+                        'event_type': row[3],
+                        'message': row[4],
+                        'details': row[5],
+                        'timestamp': row[6]
+                    })
+                
+                return logs
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to get monitoring logs: {e}")
+            return [] 

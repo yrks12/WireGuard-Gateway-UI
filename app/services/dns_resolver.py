@@ -23,6 +23,8 @@ class DNSResolver:
     DNS_CHECK_INTERVAL = timedelta(minutes=5)
     # Callback for handling DNS changes
     _dns_change_callback = None
+    # Config storage for logging
+    _config_storage = None
     
     @classmethod
     def extract_hostname_from_config(cls, config_content: str) -> Optional[str]:
@@ -114,6 +116,13 @@ class DNSResolver:
         logger.info("DNS change callback registered")
     
     @classmethod
+    def set_config_storage(cls, config_storage) -> None:
+        """
+        Set the config storage instance for logging monitoring events.
+        """
+        cls._config_storage = config_storage
+    
+    @classmethod
     def check_hostname_changes(cls) -> List[Dict]:
         """
         Check all registered hostnames for IP changes.
@@ -148,6 +157,15 @@ class DNSResolver:
                 }
                 changes.append(change_info)
                 logger.info(f"IP change detected for {hostname}: {previous_ip} -> {current_ip}")
+                
+                # Log monitoring event
+                if cls._config_storage:
+                    client_name = cls._client_names.get(client_id, 'Unknown')
+                    cls._config_storage.log_monitoring_event(
+                        client_id, client_name, "dns_ip_change",
+                        f"DNS IP change detected for {hostname}",
+                        f"Previous: {previous_ip}, Current: {current_ip}"
+                    )
             
             # Update stored IP
             cls._resolved_ips[hostname] = current_ip

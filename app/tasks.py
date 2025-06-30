@@ -23,8 +23,16 @@ def monitor_wireguard(app):
                         import os
                         interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
                         
-                        # Use WireGuardMonitor to check interface status
+                        # Use WireGuardMonitor to check interface status and alerts
                         peers = WireGuardMonitor.check_interface(interface_name)
+                        
+                        # Check for disconnect alerts
+                        WireGuardMonitor.check_and_alert(
+                            interface_name, 
+                            client.get('name', 'Unknown'),
+                            client['id'],
+                            app.config_storage
+                        )
                         
                         # Update client status based on peer connection
                         if peers:

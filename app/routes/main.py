@@ -347,6 +347,52 @@ def activate_client(client_id):
         
         # Update client status
         current_app.config_storage.update_client_status(client_id, 'active')
+        
+        # Trigger initial handshake by pinging client's internal IP
+        try:
+            # Extract client's actual IP from the WireGuard config file
+            with open(config_path, 'r') as f:
+                config_content = f.read()
+            
+            # Look for Address line in [Interface] section
+            import re
+            address_match = re.search(r'Address\s*=\s*([^/\s,]+)', config_content)
+            if address_match:
+                client_ip = address_match.group(1).strip()
+                logger.info(f"Triggering handshake for client {client_id} by pinging {client_ip}")
+                
+                ping_result = subprocess.run(
+                    ['sudo', 'ping', '-c', '1', '-W', '2', client_ip],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if ping_result.returncode == 0:
+                    logger.info(f"Successfully pinged client {client_id} at {client_ip} - handshake established")
+                    current_app.config_storage.log_monitoring_event(
+                        client_id, client['name'], "handshake_established",
+                        f"Initial handshake triggered successfully",
+                        f"Pinged {client_ip}"
+                    )
+                else:
+                    logger.warning(f"Ping to client {client_id} at {client_ip} failed, but interface is up")
+                    current_app.config_storage.log_monitoring_event(
+                        client_id, client['name'], "handshake_ping_failed",
+                        f"Failed to ping client after activation",
+                        f"Ping to {client_ip} failed: {ping_result.stderr}"
+                    )
+            else:
+                logger.warning(f"Could not extract client IP from config for {client_id}")
+        except Exception as e:
+            logger.warning(f"Error triggering handshake for client {client_id}: {e}")
+        
+        # Log monitoring event
+        current_app.config_storage.log_monitoring_event(
+            client_id, client['name'], "client_activated",
+            f"Client manually activated via UI",
+            f"Interface: {os.path.splitext(os.path.basename(config_path))[0]}"
+        )
+        
         logger.info(f"Successfully activated client {client_id}")
         
         return jsonify({
@@ -422,6 +468,14 @@ def deactivate_client(client_id):
         
         # Update client status
         current_app.config_storage.update_client_status(client_id, 'inactive')
+        
+        # Log monitoring event
+        current_app.config_storage.log_monitoring_event(
+            client_id, client['name'], "client_deactivated",
+            f"Client manually deactivated via UI",
+            f"Interface: {interface_name}"
+        )
+        
         logger.info(f"Successfully deactivated client {client_id}")
         
         return jsonify({
@@ -1285,3 +1339,30 @@ def sync_system_state():
             'status': 'error',
             'message': str(e)
         }), 500
+
+@bp.route('/api/monitoring/logs')
+@login_required
+def get_monitoring_logs():
+    """Get monitoring logs for all clients or a specific client."""
+    try:
+        client_id = request.args.get('client_id')
+        limit = int(request.args.get('limit', 100))
+        
+        logs = current_app.config_storage.get_monitoring_logs(client_id, limit)
+        
+        return jsonify({
+            'status': 'success',
+            'logs': logs
+        })
+    except Exception as e:
+        logger.error(f"Error getting monitoring logs: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@bp.route('/monitoring/logs')
+@login_required
+def monitoring_logs():
+    """Show monitoring logs page."""
+    return render_template('monitoring_logs.html')

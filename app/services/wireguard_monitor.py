@@ -88,7 +88,7 @@ class WireGuardMonitor:
             return {}
     
     @classmethod
-    def check_and_alert(cls, interface: str, client_name: str) -> None:
+    def check_and_alert(cls, interface: str, client_name: str, client_id: str = None, config_storage=None) -> None:
         """
         Check interface status and send alerts if peers are disconnected.
         """
@@ -118,10 +118,31 @@ class WireGuardMonitor:
                         if success:
                             cls._last_alerts[peer] = now
                             logger.info(f"Sent disconnect alert for {client_name}")
+                            # Log monitoring event
+                            if config_storage and client_id:
+                                config_storage.log_monitoring_event(
+                                    client_id, client_name, "disconnect_alert", 
+                                    f"Client disconnected - alert sent", 
+                                    f"Peer: {peer[:8]}..."
+                                )
                         else:
                             logger.error(f"Failed to send disconnect alert for {client_name}")
+                            # Log monitoring event
+                            if config_storage and client_id:
+                                config_storage.log_monitoring_event(
+                                    client_id, client_name, "disconnect_alert_failed", 
+                                    f"Client disconnected - alert failed", 
+                                    f"Peer: {peer[:8]}..."
+                                )
                     except Exception as e:
                         logger.error(f"Error sending alert: {e}")
+                        # Log monitoring event
+                        if config_storage and client_id:
+                            config_storage.log_monitoring_event(
+                                client_id, client_name, "alert_error", 
+                                f"Error sending disconnect alert: {str(e)}", 
+                                f"Peer: {peer[:8]}..."
+                            )
                         # Log failed alert
                         AlertHistory.add_alert(
                             client_name=client_name,
