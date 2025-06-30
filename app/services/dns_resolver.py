@@ -173,7 +173,7 @@ class DNSResolver:
                 'client_name': client_name,
                 'resolved_ip': resolved_ip,
                 'last_check': last_check.isoformat() if last_check else None,
-                'time_since_check': (now - last_check) if last_check else None
+                'time_since_check': str(now - last_check) if last_check else None
             }
         
         return status
