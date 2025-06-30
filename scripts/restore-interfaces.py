@@ -101,8 +101,12 @@ class InterfaceRestorer:
             logger.info(f"Activating WireGuard interface: {interface_name}")
             success, error = WireGuardService.activate_client(config_path)
             if not success:
-                logger.error(f"Failed to activate {client_name}: {error}")
-                return False
+                # Check if interface already exists - that's actually OK
+                if "already exists" in str(error):
+                    logger.info(f"Interface {interface_name} already exists, continuing...")
+                else:
+                    logger.error(f"Failed to activate {client_name}: {error}")
+                    return False
             
             # 2. Set up iptables rules
             logger.info(f"Setting up iptables rules for subnet: {subnet}")
