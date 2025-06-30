@@ -296,7 +296,7 @@ def setup_forwarding(client_id):
         interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
         
         # Set up forwarding rules
-        success, error = IptablesManager.setup_forwarding(interface_name)
+        success, error = IptablesManager.setup_forwarding(interface_name, client['subnet'])
         if not success:
             return jsonify({
                 'error': 'Failed to set up forwarding',
@@ -327,7 +327,7 @@ def cleanup_forwarding(client_id):
         interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]
         
         # Clean up forwarding rules
-        success, error = IptablesManager.cleanup_forwarding(interface_name)
+        success, error = IptablesManager.cleanup_forwarding(interface_name, client['subnet'])
         if not success:
             return jsonify({
                 'error': 'Failed to clean up forwarding',

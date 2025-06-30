@@ -9,7 +9,7 @@ import subprocess
 @patch('subprocess.run')
 def test_setup_forwarding_success(mock_run, mock_get_lan_interface):
     mock_run.return_value = MagicMock(returncode=0)
-    success, error = IptablesManager.setup_forwarding('wg0')
+    success, error = IptablesManager.setup_forwarding('wg0', '192.168.1.0/24')
     assert success
     assert error is None
     # Check that all iptables commands were called
@@ -19,7 +19,7 @@ def test_setup_forwarding_success(mock_run, mock_get_lan_interface):
 @patch('subprocess.run')
 def test_setup_forwarding_failure(mock_run, mock_get_lan_interface):
     mock_run.side_effect = subprocess.CalledProcessError(1, 'cmd', stderr='error')
-    success, error = IptablesManager.setup_forwarding('wg0')
+    success, error = IptablesManager.setup_forwarding('wg0', '192.168.1.0/24')
     assert not success
     assert "Command 'cmd' returned non-zero exit status 1." in error
 
@@ -27,7 +27,7 @@ def test_setup_forwarding_failure(mock_run, mock_get_lan_interface):
 @patch('subprocess.run')
 def test_cleanup_forwarding_success(mock_run, mock_get_lan_interface):
     mock_run.return_value = MagicMock(returncode=0)
-    success, error = IptablesManager.cleanup_forwarding('wg0')
+    success, error = IptablesManager.cleanup_forwarding('wg0', '192.168.1.0/24')
     assert success
     assert error is None
     assert mock_run.call_count == 3

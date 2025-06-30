@@ -41,9 +41,12 @@ class IptablesManager:
             return None
 
     @staticmethod
-    def setup_forwarding(client_interface: str) -> Tuple[bool, Optional[str]]:
+    def setup_forwarding(client_interface: str, client_subnet: str) -> Tuple[bool, Optional[str]]:
         """
         Set up iptables rules for a WireGuard client.
+        Args:
+            client_interface: WireGuard interface name
+            client_subnet: Client's allowed subnet (e.g., '192.168.1.0/24')
         Returns: (success, error_message)
         """
         try:
@@ -58,15 +61,15 @@ class IptablesManager:
             if result.returncode != 0:
                 return False, f"Failed to enable IP forwarding: {result.stderr}"
 
-            # Add NAT rules
+            # Add NAT rules for specific client subnet
             nat_cmds = [
-                ['sudo', 'iptables', '-t', 'nat', '-A', 'POSTROUTING', '-o', client_interface, '-j', 'MASQUERADE']
+                ['sudo', 'iptables', '-t', 'nat', '-A', 'POSTROUTING', '-s', client_subnet, '-o', lan_interface, '-j', 'MASQUERADE']
             ]
             
-            # Add forwarding rules
+            # Add forwarding rules for specific client subnet
             forward_cmds = [
-                ['sudo', 'iptables', '-A', 'FORWARD', '-i', lan_interface, '-o', client_interface, '-j', 'ACCEPT'],
-                ['sudo', 'iptables', '-A', 'FORWARD', '-i', client_interface, '-o', lan_interface, '-m', 'state', '--state', 'RELATED,ESTABLISHED', '-j', 'ACCEPT']
+                ['sudo', 'iptables', '-A', 'FORWARD', '-s', client_subnet, '-i', client_interface, '-o', lan_interface, '-j', 'ACCEPT'],
+                ['sudo', 'iptables', '-A', 'FORWARD', '-d', client_subnet, '-i', lan_interface, '-o', client_interface, '-m', 'state', '--state', 'RELATED,ESTABLISHED', '-j', 'ACCEPT']
             ]
 
             # Execute all commands
@@ -74,7 +77,7 @@ class IptablesManager:
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode != 0:
                     # Try to clean up any rules that were added
-                    IptablesManager.cleanup_forwarding(client_interface)
+                    IptablesManager.cleanup_forwarding(client_interface, client_subnet)
                     return False, f"Failed to add iptables rule: {result.stderr}"
 
             return True, None
@@ -82,9 +85,12 @@ class IptablesManager:
             return False, str(e)
 
     @staticmethod
-    def cleanup_forwarding(client_interface: str) -> Tuple[bool, Optional[str]]:
+    def cleanup_forwarding(client_interface: str, client_subnet: str) -> Tuple[bool, Optional[str]]:
         """
         Remove iptables rules for a WireGuard client.
+        Args:
+            client_interface: WireGuard interface name
+            client_subnet: Client's allowed subnet (e.g., '192.168.1.0/24')
         Returns: (success, error_message)
         """
         try:
@@ -93,15 +99,15 @@ class IptablesManager:
             if not lan_interface:
                 return False, "Could not determine LAN interface"
 
-            # Remove NAT rules
+            # Remove NAT rules for specific client subnet
             nat_cmds = [
-                ['sudo', 'iptables', '-t', 'nat', '-D', 'POSTROUTING', '-o', client_interface, '-j', 'MASQUERADE']
+                ['sudo', 'iptables', '-t', 'nat', '-D', 'POSTROUTING', '-s', client_subnet, '-o', lan_interface, '-j', 'MASQUERADE']
             ]
             
-            # Remove forwarding rules
+            # Remove forwarding rules for specific client subnet
             forward_cmds = [
-                ['sudo', 'iptables', '-D', 'FORWARD', '-i', lan_interface, '-o', client_interface, '-j', 'ACCEPT'],
-                ['sudo', 'iptables', '-D', 'FORWARD', '-i', client_interface, '-o', lan_interface, '-m', 'state', '--state', 'RELATED,ESTABLISHED', '-j', 'ACCEPT']
+                ['sudo', 'iptables', '-D', 'FORWARD', '-s', client_subnet, '-i', client_interface, '-o', lan_interface, '-j', 'ACCEPT'],
+                ['sudo', 'iptables', '-D', 'FORWARD', '-d', client_subnet, '-i', lan_interface, '-o', client_interface, '-m', 'state', '--state', 'RELATED,ESTABLISHED', '-j', 'ACCEPT']
             ]
 
             # Execute all commands
