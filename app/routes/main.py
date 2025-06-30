@@ -1014,6 +1014,15 @@ def get_monitoring_status():
     """Get current connection status for all clients from the database."""
     try:
         clients = current_app.config_storage.list_clients()
+        
+        # Get actual WireGuard interfaces from system
+        try:
+            result = subprocess.run(['sudo', 'wg', 'show', 'interfaces'], capture_output=True, text=True)
+            active_interfaces = set(result.stdout.strip().split()) if result.returncode == 0 else set()
+        except Exception as e:
+            logger.warning(f"Failed to get WireGuard interfaces: {e}")
+            active_interfaces = set()
+        
         status = {}
         for client in clients:
             # Get interface name from config path
@@ -1023,19 +1032,21 @@ def get_monitoring_status():
             
             if config_path:
                 interface = os.path.splitext(os.path.basename(config_path))[0]
-                # Get current handshake status from actual system
-                peers = WireGuardMonitor.check_interface(interface)
                 
-                # Determine connection status based on actual handshakes
-                for peer, peer_connected in peers.items():
-                    if peer_connected and peer in WireGuardMonitor._last_handshakes:
-                        last_handshake = WireGuardMonitor._last_handshakes[peer]
-                        is_connected = True
-                        break
+                # Check if interface is actually active
+                is_connected = interface in active_interfaces
+                
+                # Get handshake info if interface is active
+                if is_connected:
+                    peers = WireGuardMonitor.check_interface(interface)
+                    for peer, peer_connected in peers.items():
+                        if peer_connected and peer in WireGuardMonitor._last_handshakes:
+                            last_handshake = WireGuardMonitor._last_handshakes[peer]
+                            break
 
             status[client['id']] = {
                 'name': client['name'],
-                'connected': is_connected,  # Use actual system state, not database
+                'connected': is_connected,  # Use actual interface status from wg show
                 'last_handshake': last_handshake.isoformat() if last_handshake else None,
                 'last_alert': None  # You can enhance this to fetch from alert history if needed
             }
