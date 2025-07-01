@@ -47,6 +47,13 @@ systemctl status wireguard-gateway     # Check service status
 systemctl restart wireguard-gateway    # Restart service
 ```
 
+**CRITICAL DEPLOYMENT NOTE:**
+- **Production app runs from `/opt/wireguard-gateway/`** - NOT the development directory
+- **Changes are only applied** when you run `sudo ./install.sh` (copies files to `/opt/`)
+- **DO NOT** run `systemctl restart wireguard-gateway` to test changes - it won't see your changes
+- **ALWAYS** run `sudo ./install.sh --skip-dependencies` to deploy code changes
+- **Development directory** is for editing only, **`/opt/` directory** is where the live service runs
+
 **Database Operations:**
 - All database operations are handled automatically by the Flask app using SQLAlchemy
 - No manual database commands needed

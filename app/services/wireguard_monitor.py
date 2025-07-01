@@ -17,8 +17,8 @@ class WireGuardMonitor:
     _last_alerts: Dict[str, datetime] = {}
     # Alert cooldown period (1 hour)
     ALERT_COOLDOWN = timedelta(hours=1)
-    # Consider a peer disconnected if no handshake for 3 minutes
-    DISCONNECT_THRESHOLD = timedelta(minutes=3)
+    # Consider a peer disconnected if no handshake for 30 minutes (prevent false positives)
+    DISCONNECT_THRESHOLD = timedelta(minutes=30)
     
     @classmethod
     def check_interface(cls, interface: str) -> Dict[str, bool]:
@@ -35,21 +35,38 @@ class WireGuardMonitor:
             )
             
             if result.returncode != 0:
-                logger.error(f"Failed to check interface {interface}: {result.stderr}")
+                # Check if interface doesn't exist (common for inactive interfaces)
+                if "No such device" in result.stderr:
+                    logger.debug(f"Interface {interface} not found (inactive): {result.stderr}")
+                else:
+                    logger.error(f"Failed to check interface {interface}: {result.stderr}")
                 return {}
             
             # Parse output
             peers = {}
             current_peer = None
             
+            # Track which peers have handshake data  
+            peers_with_handshakes = set()
+            
             for line in result.stdout.splitlines():
                 if line.startswith('peer: '):
                     current_peer = line.split(': ')[1]
-                    peers[current_peer] = False
+                    # Default to True - interface is up and peer is configured
+                    peers[current_peer] = True
+                    logger.debug(f"Found peer {current_peer[:8]}..., defaulting to connected=True")
                 elif line.startswith('  latest handshake:') and current_peer:
                     handshake_str = line.split(': ')[1]
                     if handshake_str != '0':
                         try:
+                            # Handle "Now" case
+                            if handshake_str.strip() == "Now":
+                                handshake_time = datetime.now()
+                                cls._last_handshakes[current_peer] = handshake_time
+                                peers[current_peer] = True
+                                logger.debug(f"Peer {current_peer[:8]}... handshake is 'Now', keeping connected=True")
+                                continue
+                            
                             # Calculate the actual timestamp by subtracting the time ago from current time
                             total_seconds = 0
                             
@@ -76,10 +93,22 @@ class WireGuardMonitor:
                                     total_seconds = int(handshake_str.split()[0]) * 86400
                             
                             handshake_time = datetime.now() - timedelta(seconds=total_seconds)
-                            peers[current_peer] = True
                             cls._last_handshakes[current_peer] = handshake_time
+                            
+                            # Check if handshake is recent enough to consider connected
+                            time_since_handshake = datetime.now() - handshake_time
+                            if time_since_handshake <= cls.DISCONNECT_THRESHOLD:
+                                peers[current_peer] = True
+                                logger.debug(f"Peer {current_peer[:8]}... within threshold ({time_since_handshake}), keeping connected=True")
+                            else:
+                                peers[current_peer] = False
+                                logger.warning(f"Peer {current_peer[:8]}... exceeded disconnect threshold: {time_since_handshake} > {cls.DISCONNECT_THRESHOLD}, setting connected=False")
                         except (ValueError, TypeError) as e:
-                            logger.error(f"Failed to parse handshake time: {handshake_str}")
+                            logger.debug(f"Failed to parse handshake time for {current_peer[:8]}: {handshake_str}")
+                            # Keep peer as connected - parsing failure doesn't mean disconnection
+            
+            # CRITICAL FIX: If no handshake line was found for a peer, keep it as connected
+            # Missing handshake line means no recent activity, not disconnection
             
             return peers
             
@@ -96,6 +125,7 @@ class WireGuardMonitor:
         now = datetime.now()
         
         for peer, is_connected in peers.items():
+            logger.warning(f"Alert check: peer {peer[:8]}... is_connected={is_connected}")
             if not is_connected:
                 # Check if we should send an alert
                 last_alert = cls._last_alerts.get(peer)
