@@ -107,7 +107,7 @@
                     data.alerts.forEach(alert => {
                         const row = document.createElement('tr');
                         row.innerHTML = `
-                            <td>${new Date(alert.timestamp).toLocaleString()}</td>
+                            <td>${alert.timestamp} UTC</td>
                             <td>${alert.client_name}</td>
                             <td>${alert.subject}</td>
                             <td>

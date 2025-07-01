@@ -3,6 +3,7 @@ from flask_login import LoginManager
 from dotenv import load_dotenv
 import os
 import logging
+import time
 from logging.handlers import RotatingFileHandler
 from app.services.pending_configs import PendingConfigsService
 from app.services.config_storage import ConfigStorageService
@@ -10,6 +11,16 @@ from app.database import db
 
 # Load environment variables
 load_dotenv()
+
+# UTC Formatter for logging
+class UTCFormatter(logging.Formatter):
+    """Custom formatter that uses UTC timestamps"""
+    def formatTime(self, record, datefmt=None):
+        created = time.gmtime(record.created)
+        if datefmt:
+            return time.strftime(datefmt, created)
+        else:
+            return time.strftime('%Y-%m-%d %H:%M:%S', created) + ',{:03d}'.format(int(record.msecs))
 
 # Initialize Flask extensions
 login_manager = LoginManager()
@@ -51,6 +62,14 @@ def create_app(test_config=None):
     # Register error handlers
     from app.error_handlers import register_error_handlers
     register_error_handlers(app)
+    
+    # Register template filters
+    @app.template_filter('utc_datetime')
+    def utc_datetime_filter(datetime_obj):
+        """Format datetime object with UTC indicator"""
+        if datetime_obj:
+            return datetime_obj.strftime('%Y-%m-%d %H:%M:%S UTC')
+        return ''
 
     # Set up logging
     if not app.debug:
@@ -59,8 +78,9 @@ def create_app(test_config=None):
         if not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
         file_handler = RotatingFileHandler(log_path, maxBytes=10240, backupCount=10)
-        file_handler.setFormatter(logging.Formatter(
-            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+        # Use UTC formatter for consistent timestamps
+        file_handler.setFormatter(UTCFormatter(
+            '%(asctime)s UTC %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
         ))
         file_handler.setLevel(logging.DEBUG)
         app.logger.addHandler(file_handler)

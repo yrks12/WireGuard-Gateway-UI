@@ -154,7 +154,7 @@
                         <td>${client.name || client.id}</td>
                         <td>${client.subnet || 'N/A'}</td>
                         <td><span class="badge ${client.status === 'active' ? 'bg-success' : 'bg-danger'}">${client.status}</span></td>
-                        <td>${client.last_handshake ? new Date(client.last_handshake).toLocaleString() : 'Never'}</td>
+                        <td>${client.last_handshake ? client.last_handshake + ' UTC' : 'Never'}</td>
                         <td>
                             <button class="btn btn-sm ${client.status === 'active' ? 'btn-danger' : 'btn-success'}" 
                                     onclick="toggleClientStatus('${client.id}', '${client.status}')">

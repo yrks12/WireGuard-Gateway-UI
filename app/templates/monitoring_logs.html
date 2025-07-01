@@ -143,7 +143,7 @@
             const badgeColor = eventTypeColors[log.event_type] || 'bg-secondary';
             
             row.innerHTML = `
-                <td>${new Date(log.timestamp).toLocaleString()}</td>
+                <td>${log.timestamp} UTC</td>
                 <td>${log.client_name || 'Unknown'}</td>
                 <td><span class="badge ${badgeColor}">${log.event_type.replace('_', ' ')}</span></td>
                 <td>${log.message}</td>
