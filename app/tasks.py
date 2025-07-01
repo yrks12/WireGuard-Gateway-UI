@@ -19,6 +19,11 @@ def monitor_wireguard(app):
                 # Update status for each client
                 for client in clients:
                     try:
+                        # Only monitor clients that are marked as active in the database
+                        if client.get('status') != 'active':
+                            logger.debug(f"Skipping monitoring for inactive client {client.get('name', 'Unknown')} (status: {client.get('status', 'unknown')})")
+                            continue
+                        
                         # Get interface name from config path
                         import os
                         interface_name = os.path.splitext(os.path.basename(client['config_path']))[0]

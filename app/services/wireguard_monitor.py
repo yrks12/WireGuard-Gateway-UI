@@ -35,7 +35,11 @@ class WireGuardMonitor:
             )
             
             if result.returncode != 0:
-                logger.error(f"Failed to check interface {interface}: {result.stderr}")
+                # Check if interface doesn't exist (common for inactive interfaces)
+                if "No such device" in result.stderr:
+                    logger.debug(f"Interface {interface} not found (inactive): {result.stderr}")
+                else:
+                    logger.error(f"Failed to check interface {interface}: {result.stderr}")
                 return {}
             
             # Parse output
