@@ -36,8 +36,11 @@ if [ ! -f "$VENV_PYTHON" ]; then
     exit 1
 fi
 
-# Run the restoration script
+# Run the restoration script with environment variables
 echo "$(date): Executing restoration script..." >> "$LOG_FILE"
+DATABASE_URL="${DATABASE_URL:-sqlite:///var/lib/wireguard-gateway/wireguard.db}" \
+INSTANCE_PATH="${INSTANCE_PATH:-/opt/wireguard-gateway/instance}" \
+LOG_PATH="${LOG_PATH:-/var/log/wireguard-gateway/wireguard.log}" \
 "$VENV_PYTHON" "$PYTHON_SCRIPT"
 exit_code=$?
 
