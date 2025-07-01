@@ -83,6 +83,9 @@ def create_app(test_config=None):
 
         # Create default development user if in debug mode
         create_default_dev_user(app)
+        
+        # Load email settings from database into app config
+        load_email_settings(app)
 
         # Initialize DNS monitoring and auto-reconnect system
         init_dns_monitoring_and_auto_reconnect(app)
@@ -112,6 +115,32 @@ def create_default_dev_user(app):
                 app.logger.info("Created default development user: admin/admin123")
         except Exception as e:
             app.logger.error(f"Failed to create default development user: {e}")
+
+def load_email_settings(app):
+    """Load email settings from database into Flask app config."""
+    try:
+        from app.models.email_settings import EmailSettings
+        
+        # Get email settings from database
+        settings = EmailSettings.get_settings()
+        
+        if settings:
+            # Load settings into Flask app config
+            app.config['SMTP_HOST'] = settings.smtp_host
+            app.config['SMTP_PORT'] = settings.smtp_port
+            app.config['SMTP_USERNAME'] = settings.smtp_username
+            app.config['SMTP_PASSWORD'] = settings.smtp_password
+            app.config['SMTP_FROM'] = settings.smtp_from
+            app.config['SMTP_USE_TLS'] = settings.smtp_use_tls
+            app.config['ALERT_RECIPIENTS'] = settings.get_recipients()
+            
+            app.logger.info(f"Loaded email settings from database - SMTP host: {settings.smtp_host}")
+        else:
+            app.logger.info("No email settings found in database")
+            
+    except Exception as e:
+        app.logger.warning(f"Failed to load email settings: {e}")
+        # Don't fail app startup if email settings can't be loaded
 
 def register_existing_ddns_clients(app):
     """Register existing clients with DDNS hostnames for monitoring."""

@@ -382,6 +382,14 @@ touch $LOG_FILE
 chmod 666 $LOG_FILE
 
 print_status "Setting up database file..."
+
+# Backup email settings before removing database
+EMAIL_BACKUP_FILE="/tmp/wireguard-gateway-email-backup.json"
+if [ -f "$DB_FILE" ]; then
+    print_status "Backing up email settings..."
+    python3 scripts/backup-restore-email.py backup "$DB_FILE" "$EMAIL_BACKUP_FILE" || true
+fi
+
 rm -f $DB_FILE
 touch $DB_FILE
 chmod 666 $DB_FILE
@@ -521,6 +529,21 @@ DB_INIT_EOF
 # Ensure database file has correct ownership and permissions
 chown wireguard:wireguard $DB_FILE
 chmod 666 $DB_FILE
+
+# Restore email settings if backup exists
+if [ -f "$EMAIL_BACKUP_FILE" ]; then
+    print_status "Restoring email settings from backup..."
+    cd $INSTALL_DIR
+    source env/bin/activate
+    python scripts/backup-restore-email.py restore "$DB_FILE" "$EMAIL_BACKUP_FILE"
+    if [ $? -eq 0 ]; then
+        print_status "Email settings restored successfully"
+    else
+        print_warning "Failed to restore email settings"
+    fi
+    deactivate
+    cd - > /dev/null
+fi
 
 # Set up config file permissions
 print_status "Setting up config file permissions..."
