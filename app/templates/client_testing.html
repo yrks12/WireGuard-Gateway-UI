@@ -137,7 +137,7 @@
                             ${data.client.status}
                         </span>`;
                     document.getElementById('client-handshake').textContent = 
-                        data.client.last_handshake ? new Date(data.client.last_handshake).toLocaleString() : 'Never';
+                        data.client.last_handshake ? data.client.last_handshake + ' UTC' : 'Never';
                     
                     updateTestHistory(data.test_history || []);
                 }
