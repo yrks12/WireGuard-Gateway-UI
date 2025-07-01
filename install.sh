@@ -533,8 +533,8 @@ chmod 666 $DB_FILE
 # Restore email settings if backup exists
 if [ -f "$EMAIL_BACKUP_FILE" ]; then
     print_status "Restoring email settings from backup..."
-    cd $INSTALL_DIR
-    source env/bin/activate
+    # We're already in $INSTALL_DIR at this point
+    source venv/bin/activate
     python scripts/backup-restore-email.py restore "$DB_FILE" "$EMAIL_BACKUP_FILE"
     if [ $? -eq 0 ]; then
         print_status "Email settings restored successfully"
@@ -542,7 +542,6 @@ if [ -f "$EMAIL_BACKUP_FILE" ]; then
         print_warning "Failed to restore email settings"
     fi
     deactivate
-    cd - > /dev/null
 fi
 
 # Set up config file permissions
