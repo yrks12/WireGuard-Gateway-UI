@@ -20,8 +20,10 @@ def monitor_wireguard(app):
                 for client in clients:
                     try:
                         # Only monitor clients that are marked as active in the database
-                        if client.get('status') != 'active':
-                            logger.debug(f"Skipping monitoring for inactive client {client.get('name', 'Unknown')} (status: {client.get('status', 'unknown')})")
+                        client_status = client.get('status', 'unknown')
+                        logger.info(f"Checking client {client.get('name', 'Unknown')} with status: '{client_status}'")
+                        if client_status != 'active':
+                            logger.info(f"Skipping monitoring for inactive client {client.get('name', 'Unknown')} (status: {client_status})")
                             continue
                         
                         # Get interface name from config path
