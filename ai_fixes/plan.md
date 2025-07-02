@@ -25,41 +25,20 @@
 - **Result**: Email settings now persist across reinstalls
 
 ### Fix #5: Timestamp Mismatch UI vs Logs  
-- **Status**: 🔄 PARTIALLY COMPLETED
-- **Branch**: `fix/timestamp-mismatch-ui-vs-logs` (ready for PR)
+- **Status**: ✅ COMPLETED & READY FOR DEPLOYMENT
+- **Branch**: `fix/timestamp-mismatch-ui-vs-logs` (committed 54fd923)
 - **Completed**:
   - ✅ UTC formatter for all application logs
-  - ✅ Template filter for UTC display
+  - ✅ Template filter for UTC display  
   - ✅ Monitoring logs now show UTC timestamps
   - ✅ Dashboard Recent Activity fixed (latest commit)
   - ✅ Client Testing handshake display fixed (latest commit)
-- **Remaining Issues**:
-  - ❌ Connection Status still shows "Never" instead of actual handshake times
-  - ❌ Some templates still use `toLocaleString()` (need to check monitoring.html, clients.html)
-  - ❌ Recent Activity API returns empty data (missing `last_activated`/`last_deactivated` fields)
+  - ✅ **NEW**: Recent Activity API fully functional with last_activated/last_deactivated tracking
+  - ✅ **NEW**: Connection Status shows real handshake times instead of "Never"
+  - ✅ **NEW**: All templates standardized to UTC format (formatTimestampUTC function added)
+  - ✅ **NEW**: Database timestamp storage unified to UTC across all operations
 
 ## Pending Fixes 🔄
-
-### Fix #5: Complete Timestamp Standardization (PRIORITY: HIGH)
-**Remaining Tasks:**
-1. **Fix Recent Activity API** (Critical issue discovered):
-   - `last_activated` and `last_deactivated` fields don't exist in config storage
-   - Recent Activity will always be empty without these fields
-   - Need to add these fields to database schema and update activation/deactivation logic
-
-2. **Fix Connection Status "Never" Display**:
-   - Connection Status shows "Never" because handshake data isn't properly propagated
-   - Need to ensure handshake data from `WireGuardMonitor._last_handshakes` is properly displayed
-
-3. **Standardize Remaining Templates**:
-   - `monitoring.html` line 110: still uses `toLocaleString()`
-   - `clients.html` line 157: reverted back to `toLocaleString()` on main branch
-   - Need to update all templates to use UTC format consistently
-
-4. **Fix Timestamp Storage Inconsistency**:
-   - Config storage uses SQLite `CURRENT_TIMESTAMP` (local time)
-   - Flask ORM uses `datetime.utcnow()` (UTC)
-   - Need to standardize all timestamp storage to UTC
 
 ### Fix #1: Client Name Lost on Subnet Prompt (PRIORITY: LOW)
 - **Status**: ❌ NOT STARTED

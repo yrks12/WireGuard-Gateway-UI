@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import time
 import logging
+from datetime import datetime, timedelta
 from app.services.wireguard import WireGuardService
 from app.services.pending_configs import PendingConfigsService
 from app.services.ip_forwarding import IPForwardingService
@@ -736,16 +737,41 @@ def get_clients():
             # Get real-time handshake data if interface is active
             if system_active:
                 try:
-                    peers = WireGuardMonitor.check_interface(interface_name)
-                    real_time_handshake = None
-                    for peer, peer_connected in peers.items():
-                        if peer_connected and peer in WireGuardMonitor._last_handshakes:
-                            real_time_handshake = WireGuardMonitor._last_handshakes[peer]
-                            break
-                    
-                    # Use real-time handshake data if available
-                    if real_time_handshake:
-                        enhanced_client['last_handshake'] = real_time_handshake.isoformat()
+                    # Get handshake data directly from wg show
+                    result = subprocess.run(['sudo', 'wg', 'show', interface_name], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        # Parse handshake from wg show output
+                        current_peer = None
+                        real_time_handshake = None
+                        for line in result.stdout.splitlines():
+                            if line.startswith('peer: '):
+                                current_peer = line.split(': ')[1]
+                            elif line.startswith('  latest handshake:') and current_peer:
+                                handshake_str = line.split(': ')[1].strip()
+                                if handshake_str and handshake_str != '0':
+                                    if handshake_str == "Now":
+                                        real_time_handshake = datetime.utcnow()
+                                    else:
+                                        # Parse "X minutes ago", "X seconds ago", etc.
+                                        try:
+                                            total_seconds = 0
+                                            if 'seconds ago' in handshake_str:
+                                                total_seconds = int(handshake_str.split()[0])
+                                            elif 'minutes ago' in handshake_str:
+                                                total_seconds = int(handshake_str.split()[0]) * 60
+                                            elif 'hours ago' in handshake_str:
+                                                total_seconds = int(handshake_str.split()[0]) * 3600
+                                            elif 'days ago' in handshake_str:
+                                                total_seconds = int(handshake_str.split()[0]) * 86400
+                                            real_time_handshake = datetime.utcnow() - timedelta(seconds=total_seconds)
+                                        except (ValueError, IndexError):
+                                            logger.warning(f"Failed to parse handshake time: {handshake_str}")
+                                            real_time_handshake = None
+                                    break
+                        
+                        # Use real-time handshake data if available
+                        if real_time_handshake:
+                            enhanced_client['last_handshake'] = real_time_handshake.isoformat()
                 except Exception as e:
                     logger.debug(f"Failed to get real-time handshake for {interface_name}: {e}")
             
@@ -1064,16 +1090,41 @@ def get_monitoring_status():
                 # Check if interface is actually active
                 is_connected = interface in active_interfaces
                 
-                # Get handshake info if interface is active
+                # Get real-time handshake info if interface is active
                 if is_connected:
-                    peers = WireGuardMonitor.check_interface(interface)
-                    logger.debug(f"Interface {interface}: found {len(peers)} peers, handshakes available for {len(WireGuardMonitor._last_handshakes)} peers")
-                    for peer, peer_connected in peers.items():
-                        logger.debug(f"Peer {peer[:8]}...: connected={peer_connected}, in handshakes={peer in WireGuardMonitor._last_handshakes}")
-                        if peer_connected and peer in WireGuardMonitor._last_handshakes:
-                            last_handshake = WireGuardMonitor._last_handshakes[peer]
-                            logger.debug(f"Using handshake time {last_handshake} for peer {peer[:8]}...")
-                            break
+                    try:
+                        # Get handshake data directly from wg show
+                        result = subprocess.run(['sudo', 'wg', 'show', interface], capture_output=True, text=True)
+                        if result.returncode == 0:
+                            # Parse handshake from wg show output
+                            current_peer = None
+                            for line in result.stdout.splitlines():
+                                if line.startswith('peer: '):
+                                    current_peer = line.split(': ')[1]
+                                elif line.startswith('  latest handshake:') and current_peer:
+                                    handshake_str = line.split(': ')[1].strip()
+                                    if handshake_str and handshake_str != '0':
+                                        if handshake_str == "Now":
+                                            last_handshake = datetime.utcnow()
+                                        else:
+                                            # Parse "X minutes ago", "X seconds ago", etc.
+                                            try:
+                                                total_seconds = 0
+                                                if 'seconds ago' in handshake_str:
+                                                    total_seconds = int(handshake_str.split()[0])
+                                                elif 'minutes ago' in handshake_str:
+                                                    total_seconds = int(handshake_str.split()[0]) * 60
+                                                elif 'hours ago' in handshake_str:
+                                                    total_seconds = int(handshake_str.split()[0]) * 3600
+                                                elif 'days ago' in handshake_str:
+                                                    total_seconds = int(handshake_str.split()[0]) * 86400
+                                                last_handshake = datetime.utcnow() - timedelta(seconds=total_seconds)
+                                            except (ValueError, IndexError):
+                                                logger.warning(f"Failed to parse handshake time: {handshake_str}")
+                                                last_handshake = None
+                                        break
+                    except Exception as e:
+                        logger.debug(f"Failed to get real-time handshake for {interface}: {e}")
 
             status[client['id']] = {
                 'name': client['name'],
