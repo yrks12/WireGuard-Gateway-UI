@@ -43,6 +43,11 @@ def create_app(test_config=None):
         }
     }
     
+    # File upload configuration for backup/restore
+    app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max upload size
+    app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'uploads')
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    
     # Set up instance paths
     app.instance_path = os.getenv('INSTANCE_PATH', './instance')
     os.makedirs(app.instance_path, exist_ok=True)

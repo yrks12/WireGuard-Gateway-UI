@@ -16,6 +16,9 @@ from datetime import datetime, timedelta
 from app.services.iptables_manager import IptablesManager
 from app.services.connectivity_test import ConnectivityTestService
 from app.services.route_command_generator import RouteCommandGenerator
+from app.services.backup_service import BackupService
+from app.services.backup_validator import BackupValidator
+from app.services.restore_service import RestoreService
 from app.services.status_poller import StatusPoller
 from app.forms import EmailSettingsForm
 from app.models.email_settings import EmailSettings
@@ -1470,3 +1473,185 @@ def get_monitoring_logs():
 def monitoring_logs():
     """Show monitoring logs page."""
     return render_template('monitoring_logs.html')
+
+# Backup & Restore Routes
+
+@bp.route('/system/backup', methods=['GET'])
+@login_required
+@rate_limit(max_requests=10, time_window=3600)  # Limit to 10 backups per hour
+def download_backup():
+    """Generate and download system backup."""
+    try:
+        # Check if user has admin permissions (you may need to implement this check)
+        # For now, allowing all logged-in users
+        
+        logger.info(f"Starting backup creation requested by user")
+        
+        # Create backup
+        success, message, backup_path = BackupService.create_backup(current_app.instance_path)
+        
+        if not success:
+            logger.error(f"Backup creation failed: {message}")
+            return jsonify({
+                'error': 'Backup creation failed',
+                'details': message
+            }), 500
+        
+        logger.info(f"Backup created successfully: {backup_path}")
+        
+        # Send file for download
+        from flask import send_file
+        return send_file(
+            backup_path,
+            as_attachment=True,
+            download_name=os.path.basename(backup_path),
+            mimetype='application/zip'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in backup download: {e}")
+        return jsonify({
+            'error': 'Backup download failed',
+            'details': str(e)
+        }), 500
+
+@bp.route('/system/backup/download/<filename>', methods=['GET'])
+@login_required
+@rate_limit(max_requests=20, time_window=3600)  # Limit to 20 downloads per hour
+def download_existing_backup(filename):
+    """Download an existing backup file."""
+    try:
+        # Secure the filename to prevent directory traversal attacks
+        secure_name = secure_filename(filename)
+        
+        # Ensure filename follows the expected pattern
+        if not secure_name.startswith('wireguard_backup_') or not secure_name.endswith('.zip'):
+            return jsonify({'error': 'Invalid backup filename'}), 400
+        
+        # Get the backups directory
+        backup_info = BackupService.get_backup_info(current_app.instance_path)
+        backup_path = os.path.join(backup_info['backup_dir'], secure_name)
+        
+        # Check if file exists
+        if not os.path.exists(backup_path):
+            return jsonify({'error': 'Backup file not found'}), 404
+        
+        logger.info(f"Downloading existing backup: {secure_name}")
+        
+        # Send file for download
+        from flask import send_file
+        return send_file(
+            backup_path,
+            as_attachment=True,
+            download_name=secure_name,
+            mimetype='application/zip'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error downloading backup {filename}: {e}")
+        return jsonify({
+            'error': 'Backup download failed',
+            'details': str(e)
+        }), 500
+
+@bp.route('/system/restore', methods=['GET'])
+@login_required
+def restore_system_form():
+    """Show system restore form."""
+    backup_info = BackupService.get_backup_info(current_app.instance_path)
+    return render_template('system_restore.html', backup_info=backup_info)
+
+@bp.route('/system/restore', methods=['POST'])
+@login_required
+@rate_limit(max_requests=5, time_window=3600)  # Limit to 5 restores per hour
+def restore_system():
+    """Upload and restore system backup."""
+    
+    try:
+        # Handle file upload
+        if 'backup_file' not in request.files:
+            return jsonify({'error': 'No backup file provided'}), 400
+        
+        backup_file = request.files['backup_file']
+        if not backup_file.filename:
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Validate file extension
+        if not backup_file.filename.lower().endswith('.zip'):
+            return jsonify({'error': 'Invalid file type. Please upload a .zip file'}), 400
+        
+        # Save uploaded file temporarily
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as temp_file:
+            backup_file.save(temp_file.name)
+            temp_backup_path = temp_file.name
+        
+        try:
+            logger.info(f"Starting system restore from uploaded file")
+            
+            # Validate backup file
+            is_valid, error, metadata = BackupValidator.validate_backup_file(temp_backup_path)
+            if not is_valid:
+                return jsonify({
+                    'error': 'Backup validation failed',
+                    'details': error
+                }), 400
+            
+            logger.info(f"Backup validation successful, starting restore...")
+            
+            # Perform restore
+            success, message = RestoreService.restore_from_backup(
+                temp_backup_path, 
+                current_app.instance_path
+            )
+            
+            if not success:
+                logger.error(f"System restore failed: {message}")
+                return jsonify({
+                    'error': 'System restore failed',
+                    'details': message
+                }), 500
+            
+            logger.info("System restore completed successfully")
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'System restored successfully',
+                'backup_info': {
+                    'version': metadata.get('backup_version'),
+                    'created_at': metadata.get('created_at'),
+                    'contents': metadata.get('contents', {})
+                }
+            })
+            
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_backup_path)
+            except Exception as e:
+                logger.warning(f"Error cleaning up temporary backup file: {e}")
+    
+    except Exception as e:
+        logger.error(f"Error in system restore: {e}")
+        return jsonify({
+            'error': 'System restore failed',
+            'details': str(e)
+        }), 500
+
+@bp.route('/system/backup-info', methods=['GET'])
+@login_required
+def get_backup_info():
+    """Get information about existing backups."""
+    try:
+        backup_info = BackupService.get_backup_info(current_app.instance_path)
+        return jsonify({
+            'status': 'success',
+            'data': backup_info
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting backup info: {e}")
+        return jsonify({
+            'error': 'Failed to get backup information',
+            'details': str(e)
+        }), 500
