@@ -91,17 +91,48 @@ class BackupService:
     def _backup_databases(self, backup_dir: str) -> Tuple[bool, str]:
         """Copy database files to backup directory."""
         try:
-            # Copy Flask app database
-            app_db_path = os.path.join(self.instance_path, 'app.db')
-            if os.path.exists(app_db_path):
-                shutil.copy2(app_db_path, os.path.join(backup_dir, 'app.db'))
-                logger.debug("Copied app.db to backup")
+            databases_found = []
+            
+            # Copy Flask app database - check multiple possible locations
+            app_db_locations = [
+                os.path.join(self.instance_path, 'app.db'),  # Standard instance location
+                './app.db',  # Working directory
+                '/opt/wireguard-gateway/app.db',  # Production root
+                '/opt/wireguard-gateway/instance/app.db'  # Production instance
+            ]
+            
+            app_db_found = False
+            for app_db_path in app_db_locations:
+                if os.path.exists(app_db_path):
+                    shutil.copy2(app_db_path, os.path.join(backup_dir, 'app.db'))
+                    logger.debug(f"Copied app.db from {app_db_path} to backup")
+                    databases_found.append('app.db')
+                    app_db_found = True
+                    break
+            
+            if not app_db_found:
+                logger.warning("app.db not found in any expected location")
+            
+            # Copy main wireguard database (used by restore scripts)
+            wireguard_db_path = '/var/lib/wireguard-gateway/wireguard.db'
+            if os.path.exists(wireguard_db_path):
+                shutil.copy2(wireguard_db_path, os.path.join(backup_dir, 'wireguard.db'))
+                logger.debug("Copied wireguard.db to backup")
+                databases_found.append('wireguard.db')
+            else:
+                logger.warning(f"wireguard.db not found at {wireguard_db_path}")
             
             # Copy config storage database
             config_db_path = os.path.join(self.instance_path, 'configs.db')
             if os.path.exists(config_db_path):
                 shutil.copy2(config_db_path, os.path.join(backup_dir, 'configs.db'))
                 logger.debug("Copied configs.db to backup")
+                databases_found.append('configs.db')
+            else:
+                logger.warning(f"configs.db not found at {config_db_path}")
+            
+            if not databases_found:
+                return False, "No database files found to backup"
             
             return True, ""
             
@@ -133,44 +164,82 @@ class BackupService:
     def _backup_iptables(self, backup_dir: str) -> Tuple[bool, str]:
         """Export current iptables rules to backup directory."""
         try:
+            rules_exported = []
+            
             # Export main iptables rules
-            result = subprocess.run(
-                ['sudo', 'iptables-save'],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+            try:
+                result = subprocess.run(
+                    ['sudo', 'iptables-save'],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    with open(os.path.join(backup_dir, 'iptables_rules.txt'), 'w') as f:
+                        f.write(result.stdout)
+                    logger.debug("Exported iptables rules to backup")
+                    rules_exported.append('iptables_rules.txt')
+                else:
+                    logger.warning(f"iptables-save failed or empty: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.warning("iptables-save timed out")
+            except Exception as e:
+                logger.warning(f"Error running iptables-save: {e}")
             
-            if result.returncode == 0:
-                with open(os.path.join(backup_dir, 'iptables_rules.txt'), 'w') as f:
-                    f.write(result.stdout)
-                logger.debug("Exported iptables rules to backup")
+            # Export NAT table rules in a more detailed format
+            try:
+                result = subprocess.run(
+                    ['sudo', 'iptables', '-t', 'nat', '-S'],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    with open(os.path.join(backup_dir, 'iptables_nat_rules.txt'), 'w') as f:
+                        f.write(result.stdout)
+                    logger.debug("Exported iptables NAT rules to backup")
+                    rules_exported.append('iptables_nat_rules.txt')
+                else:
+                    logger.warning(f"iptables NAT export failed or empty: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.warning("iptables NAT export timed out")
+            except Exception as e:
+                logger.warning(f"Error running iptables NAT export: {e}")
+            
+            # Export FORWARD table rules (important for WireGuard)
+            try:
+                result = subprocess.run(
+                    ['sudo', 'iptables', '-t', 'filter', '-S', 'FORWARD'],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    with open(os.path.join(backup_dir, 'iptables_forward_rules.txt'), 'w') as f:
+                        f.write(result.stdout)
+                    logger.debug("Exported iptables FORWARD rules to backup")
+                    rules_exported.append('iptables_forward_rules.txt')
+                else:
+                    logger.warning(f"iptables FORWARD export failed or empty: {result.stderr}")
+            except Exception as e:
+                logger.warning(f"Error running iptables FORWARD export: {e}")
+            
+            # iptables backup is non-critical, so we always return success
+            # but log what we managed to export
+            if rules_exported:
+                logger.info(f"Successfully exported iptables rules: {', '.join(rules_exported)}")
             else:
-                logger.warning(f"iptables-save failed: {result.stderr}")
-                return False, f"iptables-save failed: {result.stderr}"
-            
-            # Export NAT table rules
-            result = subprocess.run(
-                ['sudo', 'iptables', '-t', 'nat', '-S'],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                with open(os.path.join(backup_dir, 'iptables_nat_rules.txt'), 'w') as f:
-                    f.write(result.stdout)
-                logger.debug("Exported iptables NAT rules to backup")
-            else:
-                logger.warning(f"iptables NAT export failed: {result.stderr}")
+                logger.warning("No iptables rules could be exported - may need to check sudo permissions")
             
             return True, ""
             
-        except subprocess.TimeoutExpired:
-            return False, "iptables export timed out"
         except Exception as e:
             logger.error(f"Error backing up iptables: {e}")
-            return False, str(e)
+            # Still return True since iptables is non-critical
+            return True, str(e)
     
     def _create_backup_metadata(self, backup_dir: str, timestamp: str) -> Tuple[bool, str]:
         """Create backup metadata file."""
@@ -197,6 +266,9 @@ class BackupService:
             
             if os.path.exists(os.path.join(backup_dir, 'configs.db')):
                 metadata['contents']['databases'].append('configs.db')
+            
+            if os.path.exists(os.path.join(backup_dir, 'wireguard.db')):
+                metadata['contents']['databases'].append('wireguard.db')
             
             configs_dir = os.path.join(backup_dir, 'configs')
             if os.path.exists(configs_dir):

@@ -1515,6 +1515,45 @@ def download_backup():
             'details': str(e)
         }), 500
 
+@bp.route('/system/backup/download/<filename>', methods=['GET'])
+@login_required
+@rate_limit(max_requests=20, time_window=3600)  # Limit to 20 downloads per hour
+def download_existing_backup(filename):
+    """Download an existing backup file."""
+    try:
+        # Secure the filename to prevent directory traversal attacks
+        secure_name = secure_filename(filename)
+        
+        # Ensure filename follows the expected pattern
+        if not secure_name.startswith('wireguard_backup_') or not secure_name.endswith('.zip'):
+            return jsonify({'error': 'Invalid backup filename'}), 400
+        
+        # Get the backups directory
+        backup_info = BackupService.get_backup_info(current_app.instance_path)
+        backup_path = os.path.join(backup_info['backup_dir'], secure_name)
+        
+        # Check if file exists
+        if not os.path.exists(backup_path):
+            return jsonify({'error': 'Backup file not found'}), 404
+        
+        logger.info(f"Downloading existing backup: {secure_name}")
+        
+        # Send file for download
+        from flask import send_file
+        return send_file(
+            backup_path,
+            as_attachment=True,
+            download_name=secure_name,
+            mimetype='application/zip'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error downloading backup {filename}: {e}")
+        return jsonify({
+            'error': 'Backup download failed',
+            'details': str(e)
+        }), 500
+
 @bp.route('/system/restore', methods=['GET'])
 @login_required
 def restore_system_form():

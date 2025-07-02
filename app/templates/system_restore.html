@@ -49,6 +49,7 @@
                                         <th>Size</th>
                                         <th>Created</th>
                                         <th>Age</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -67,6 +68,14 @@
                                             {% else %}
                                                 {{ backup.age_days }} days ago
                                             {% endif %}
+                                        </td>
+                                        <td>
+                                            <a href="/system/backup/download/{{ backup.filename }}" 
+                                               class="btn btn-sm btn-outline-primary" 
+                                               title="Download this backup">
+                                                <i class="fas fa-download me-1"></i>
+                                                Download
+                                            </a>
                                         </td>
                                     </tr>
                                     {% endfor %}

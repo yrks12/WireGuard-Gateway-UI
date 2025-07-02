@@ -185,17 +185,51 @@ class RestoreService:
     def _restore_databases(self, staging_dir: str) -> Tuple[bool, str]:
         """Restore database files from staging directory."""
         try:
-            # Restore app.db if present
-            app_db_staging = os.path.join(staging_dir, 'app.db')
-            app_db_target = os.path.join(self.instance_path, 'app.db')
+            databases_restored = []
             
+            # Restore app.db if present - check multiple possible target locations
+            app_db_staging = os.path.join(staging_dir, 'app.db')
             if os.path.exists(app_db_staging):
+                app_db_targets = [
+                    os.path.join(self.instance_path, 'app.db'),  # Standard instance location
+                    './app.db',  # Working directory
+                    '/opt/wireguard-gateway/app.db',  # Production root
+                ]
+                
+                # Try to find existing app.db location or use first target
+                app_db_target = None
+                for target in app_db_targets:
+                    if os.path.exists(target):
+                        app_db_target = target
+                        break
+                
+                if not app_db_target:
+                    app_db_target = app_db_targets[0]  # Default to instance location
+                
                 # Backup existing database
                 if os.path.exists(app_db_target):
                     shutil.copy2(app_db_target, f"{app_db_target}.pre_restore")
                 
+                # Ensure target directory exists
+                os.makedirs(os.path.dirname(app_db_target), exist_ok=True)
                 shutil.copy2(app_db_staging, app_db_target)
-                logger.info("Restored app.db")
+                logger.info(f"Restored app.db to {app_db_target}")
+                databases_restored.append('app.db')
+            
+            # Restore wireguard.db if present (main database used by restore scripts)
+            wireguard_db_staging = os.path.join(staging_dir, 'wireguard.db')
+            wireguard_db_target = '/var/lib/wireguard-gateway/wireguard.db'
+            
+            if os.path.exists(wireguard_db_staging):
+                # Backup existing database
+                if os.path.exists(wireguard_db_target):
+                    shutil.copy2(wireguard_db_target, f"{wireguard_db_target}.pre_restore")
+                
+                # Ensure target directory exists
+                os.makedirs(os.path.dirname(wireguard_db_target), exist_ok=True)
+                shutil.copy2(wireguard_db_staging, wireguard_db_target)
+                logger.info("Restored wireguard.db")
+                databases_restored.append('wireguard.db')
             
             # Restore configs.db if present
             config_db_staging = os.path.join(staging_dir, 'configs.db')
@@ -208,7 +242,12 @@ class RestoreService:
                 
                 shutil.copy2(config_db_staging, config_db_target)
                 logger.info("Restored configs.db")
+                databases_restored.append('configs.db')
             
+            if not databases_restored:
+                return False, "No database files found in backup to restore"
+            
+            logger.info(f"Successfully restored databases: {', '.join(databases_restored)}")
             return True, ""
             
         except Exception as e:
@@ -246,46 +285,95 @@ class RestoreService:
     def _restore_iptables(self, staging_dir: str) -> Tuple[bool, str]:
         """Restore iptables rules from staging directory."""
         try:
+            rules_restored = []
+            
             # Restore main iptables rules
             iptables_file = os.path.join(staging_dir, 'iptables_rules.txt')
             if os.path.exists(iptables_file):
-                with open(iptables_file, 'r') as f:
-                    rules_content = f.read()
-                
-                # Apply iptables rules
-                result = subprocess.run(
-                    ['sudo', 'iptables-restore'],
-                    input=rules_content,
-                    text=True,
-                    capture_output=True,
-                    timeout=60
-                )
-                
-                if result.returncode == 0:
-                    logger.info("Restored iptables rules")
-                else:
-                    logger.warning(f"iptables-restore failed: {result.stderr}")
-                    return False, f"iptables-restore failed: {result.stderr}"
+                try:
+                    with open(iptables_file, 'r') as f:
+                        rules_content = f.read().strip()
+                    
+                    if rules_content:
+                        # Apply iptables rules
+                        result = subprocess.run(
+                            ['sudo', 'iptables-restore'],
+                            input=rules_content,
+                            text=True,
+                            capture_output=True,
+                            timeout=60
+                        )
+                        
+                        if result.returncode == 0:
+                            logger.info("Restored iptables rules")
+                            rules_restored.append("main iptables")
+                        else:
+                            logger.warning(f"iptables-restore failed: {result.stderr}")
+                except Exception as e:
+                    logger.warning(f"Error restoring main iptables rules: {e}")
             
-            # Restore NAT rules (if using separate format)
+            # Restore NAT rules
             nat_rules_file = os.path.join(staging_dir, 'iptables_nat_rules.txt')
             if os.path.exists(nat_rules_file):
-                with open(nat_rules_file, 'r') as f:
-                    nat_rules = f.read().strip().split('\\n')
-                
-                for rule in nat_rules:
-                    if rule.strip() and not rule.startswith('#'):
-                        # Convert from -S format to iptables command
-                        if rule.startswith('-'):
-                            rule_cmd = ['sudo', 'iptables', '-t', 'nat'] + rule.split()[1:]
-                            try:
-                                subprocess.run(rule_cmd, timeout=30, check=True)
-                            except subprocess.CalledProcessError:
-                                # Continue with other rules if one fails
-                                pass
-                
-                logger.info("Restored iptables NAT rules")
+                try:
+                    with open(nat_rules_file, 'r') as f:
+                        nat_rules = f.read().strip().split('\n')
+                    
+                    nat_rules_applied = 0
+                    for rule in nat_rules:
+                        if rule.strip() and not rule.startswith('#') and rule.startswith('-'):
+                            # Convert from -S format to iptables command
+                            rule_parts = rule.split()
+                            if len(rule_parts) > 1:
+                                rule_cmd = ['sudo', 'iptables', '-t', 'nat'] + rule_parts[1:]
+                                try:
+                                    subprocess.run(rule_cmd, timeout=30, check=True, capture_output=True)
+                                    nat_rules_applied += 1
+                                except subprocess.CalledProcessError as e:
+                                    logger.debug(f"NAT rule failed (may already exist): {rule}")
+                                except Exception as e:
+                                    logger.warning(f"Error applying NAT rule '{rule}': {e}")
+                    
+                    if nat_rules_applied > 0:
+                        logger.info(f"Restored {nat_rules_applied} iptables NAT rules")
+                        rules_restored.append(f"{nat_rules_applied} NAT rules")
+                except Exception as e:
+                    logger.warning(f"Error restoring NAT rules: {e}")
             
+            # Restore FORWARD rules
+            forward_rules_file = os.path.join(staging_dir, 'iptables_forward_rules.txt')
+            if os.path.exists(forward_rules_file):
+                try:
+                    with open(forward_rules_file, 'r') as f:
+                        forward_rules = f.read().strip().split('\n')
+                    
+                    forward_rules_applied = 0
+                    for rule in forward_rules:
+                        if rule.strip() and not rule.startswith('#') and rule.startswith('-'):
+                            # Convert from -S format to iptables command
+                            rule_parts = rule.split()
+                            if len(rule_parts) > 1:
+                                rule_cmd = ['sudo', 'iptables', '-t', 'filter'] + rule_parts[1:]
+                                try:
+                                    subprocess.run(rule_cmd, timeout=30, check=True, capture_output=True)
+                                    forward_rules_applied += 1
+                                except subprocess.CalledProcessError as e:
+                                    logger.debug(f"FORWARD rule failed (may already exist): {rule}")
+                                except Exception as e:
+                                    logger.warning(f"Error applying FORWARD rule '{rule}': {e}")
+                    
+                    if forward_rules_applied > 0:
+                        logger.info(f"Restored {forward_rules_applied} iptables FORWARD rules")
+                        rules_restored.append(f"{forward_rules_applied} FORWARD rules")
+                except Exception as e:
+                    logger.warning(f"Error restoring FORWARD rules: {e}")
+            
+            if rules_restored:
+                logger.info(f"Successfully restored iptables: {', '.join(rules_restored)}")
+            else:
+                logger.warning("No iptables rules found in backup or all failed to restore")
+            
+            # iptables restore is non-critical, so we always return True
             return True, ""
             
         except Exception as e:
@@ -328,6 +416,16 @@ class RestoreService:
                     conn.close()
                 except Exception as e:
                     errors.append(f"configs.db validation failed: {e}")
+            
+            # Check wireguard.db
+            wireguard_db = '/var/lib/wireguard-gateway/wireguard.db'
+            if os.path.exists(wireguard_db):
+                try:
+                    conn = sqlite3.connect(wireguard_db)
+                    conn.execute("SELECT COUNT(*) FROM sqlite_master")
+                    conn.close()
+                except Exception as e:
+                    errors.append(f"wireguard.db validation failed: {e}")
             
             # Check configs directory exists
             configs_dir = os.path.join(self.instance_path, 'configs')
