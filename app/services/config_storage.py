@@ -31,10 +31,23 @@ class ConfigStorageService:
                     public_key TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'inactive',
                     last_handshake TIMESTAMP,
+                    last_activated TIMESTAMP,
+                    last_deactivated TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Add new columns to existing databases if they don't exist
+            try:
+                conn.execute("ALTER TABLE clients ADD COLUMN last_activated TIMESTAMP")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            
+            try:
+                conn.execute("ALTER TABLE clients ADD COLUMN last_deactivated TIMESTAMP")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS test_history (
@@ -115,10 +128,12 @@ class ConfigStorageService:
         
         # Store metadata in database
         with sqlite3.connect(self.db_path) as conn:
+            # Use explicit UTC timestamp
+            now_utc = datetime.utcnow().isoformat()
             conn.execute("""
-                INSERT INTO clients (id, name, config_path, subnet, public_key, status)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (client_id, client_name, wg_config_path, subnet, public_key, 'inactive'))
+                INSERT INTO clients (id, name, config_path, subnet, public_key, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (client_id, client_name, wg_config_path, subnet, public_key, 'inactive', now_utc, now_utc))
             
             # Get the stored metadata
             cursor = conn.execute("""
@@ -169,7 +184,7 @@ class ConfigStorageService:
         """Retrieve client metadata by ID."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
-                SELECT id, name, config_path, subnet, public_key, status, last_handshake, created_at, updated_at
+                SELECT id, name, config_path, subnet, public_key, status, last_handshake, last_activated, last_deactivated, created_at, updated_at
                 FROM clients WHERE id = ?
             """, (client_id,))
             
@@ -185,15 +200,17 @@ class ConfigStorageService:
                 'public_key': row[4],
                 'status': row[5],
                 'last_handshake': row[6],
-                'created_at': row[7],
-                'updated_at': row[8]
+                'last_activated': row[7],
+                'last_deactivated': row[8],
+                'created_at': row[9],
+                'updated_at': row[10]
             }
     
     def list_clients(self) -> List[Dict]:
         """List all stored clients."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
-                SELECT id, name, config_path, subnet, public_key, status, last_handshake, created_at, updated_at
+                SELECT id, name, config_path, subnet, public_key, status, last_handshake, last_activated, last_deactivated, created_at, updated_at
                 FROM clients
             """)
             
@@ -205,33 +222,72 @@ class ConfigStorageService:
                 'public_key': row[4],
                 'status': row[5],
                 'last_handshake': row[6],
-                'created_at': row[7],
-                'updated_at': row[8]
+                'last_activated': row[7],
+                'last_deactivated': row[8],
+                'created_at': row[9],
+                'updated_at': row[10]
             } for row in cursor.fetchall()]
     
     def update_client_status(self, client_id: str, status: str, last_handshake: Optional[datetime] = None):
-        """Update client status and last handshake time."""
+        """Update client status and last handshake time with activation/deactivation tracking."""
+        from datetime import datetime
+        
         with sqlite3.connect(self.db_path) as conn:
-            if last_handshake:
-                conn.execute("""
-                    UPDATE clients 
-                    SET status = ?, last_handshake = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (status, last_handshake, client_id))
+            # Get current UTC timestamp
+            now_utc = datetime.utcnow().isoformat()
+            
+            if status == 'active':
+                # Update status and set last_activated timestamp
+                if last_handshake:
+                    conn.execute("""
+                        UPDATE clients 
+                        SET status = ?, last_handshake = ?, last_activated = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (status, last_handshake, now_utc, now_utc, client_id))
+                else:
+                    conn.execute("""
+                        UPDATE clients 
+                        SET status = ?, last_activated = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (status, now_utc, now_utc, client_id))
+            elif status == 'inactive':
+                # Update status and set last_deactivated timestamp
+                if last_handshake:
+                    conn.execute("""
+                        UPDATE clients 
+                        SET status = ?, last_handshake = ?, last_deactivated = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (status, last_handshake, now_utc, now_utc, client_id))
+                else:
+                    conn.execute("""
+                        UPDATE clients 
+                        SET status = ?, last_deactivated = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (status, now_utc, now_utc, client_id))
             else:
-                conn.execute("""
-                    UPDATE clients 
-                    SET status = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (status, client_id))
+                # Original behavior for other statuses
+                if last_handshake:
+                    conn.execute("""
+                        UPDATE clients 
+                        SET status = ?, last_handshake = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (status, last_handshake, now_utc, client_id))
+                else:
+                    conn.execute("""
+                        UPDATE clients 
+                        SET status = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (status, now_utc, client_id))
     
     def add_test_result(self, client_id: str, latency_ms: Optional[int], success: bool, target: str = 'N/A', error: Optional[str] = None):
         """Add a connectivity test result."""
         with sqlite3.connect(self.db_path) as conn:
+            # Use explicit UTC timestamp
+            now_utc = datetime.utcnow().isoformat()
             conn.execute("""
-                INSERT INTO test_history (client_id, latency_ms, success, target, error)
-                VALUES (?, ?, ?, ?, ?)
-            """, (client_id, latency_ms, success, target, error))
+                INSERT INTO test_history (client_id, latency_ms, success, target, error, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (client_id, latency_ms, success, target, error, now_utc))
     
     def get_test_history(self, client_id: str, limit: int = 5) -> List[Dict]:
         """Get recent test history for a client."""
@@ -290,10 +346,12 @@ class ConfigStorageService:
         """Log a monitoring event for a client."""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # Use explicit UTC timestamp
+                now_utc = datetime.utcnow().isoformat()
                 conn.execute("""
-                    INSERT INTO monitoring_logs (client_id, client_name, event_type, message, details)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (client_id, client_name, event_type, message, details))
+                    INSERT INTO monitoring_logs (client_id, client_name, event_type, message, details, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (client_id, client_name, event_type, message, details, now_utc))
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)

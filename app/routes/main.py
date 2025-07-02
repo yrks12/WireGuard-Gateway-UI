@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import time
 import logging
+from datetime import datetime, timedelta
 from app.services.wireguard import WireGuardService
 from app.services.pending_configs import PendingConfigsService
 from app.services.ip_forwarding import IPForwardingService
@@ -360,41 +361,40 @@ def activate_client(client_id):
         except Exception as e:
             logger.warning(f"Exception setting up iptables for {client_id}: {e}")
         
-        # Trigger initial handshake by pinging client's internal IP
+        # Trigger initial handshake by pinging client's subnet (AllowedIPs)
         try:
-            # Extract client's actual IP from the WireGuard config file
-            with open(config_path, 'r') as f:
-                config_content = f.read()
-            
-            # Look for Address line in [Interface] section
-            import re
-            address_match = re.search(r'Address\s*=\s*([^/\s,]+)', config_content)
-            if address_match:
-                client_ip = address_match.group(1).strip()
-                logger.info(f"Triggering handshake for client {client_id} by pinging {client_ip}")
+            # Use the subnet from database (AllowedIPs) to generate a ping target
+            subnet = client.get('subnet', '')
+            if subnet and '/' in subnet:
+                # Extract network and generate first usable IP
+                import ipaddress
+                network = ipaddress.IPv4Network(subnet, strict=False)
+                # Use the first host IP in the subnet (e.g., 192.168.101.1 for 192.168.101.0/24)
+                target_ip = str(network.network_address + 1)
+                logger.info(f"Triggering handshake for client {client_id} by pinging subnet {subnet} at {target_ip}")
                 
                 ping_result = subprocess.run(
-                    ['sudo', 'ping', '-c', '1', '-W', '2', client_ip],
+                    ['sudo', 'ping', '-c', '1', '-W', '2', target_ip],
                     capture_output=True,
                     text=True
                 )
                 
                 if ping_result.returncode == 0:
-                    logger.info(f"Successfully pinged client {client_id} at {client_ip} - handshake established")
+                    logger.info(f"Successfully pinged client {client_id} subnet at {target_ip} - handshake established")
                     current_app.config_storage.log_monitoring_event(
                         client_id, client['name'], "handshake_established",
                         f"Initial handshake triggered successfully",
-                        f"Pinged {client_ip}"
+                        f"Pinged {target_ip} in subnet {subnet}"
                     )
                 else:
-                    logger.warning(f"Ping to client {client_id} at {client_ip} failed, but interface is up")
+                    logger.warning(f"Ping to client {client_id} subnet at {target_ip} failed, but interface is up")
                     current_app.config_storage.log_monitoring_event(
                         client_id, client['name'], "handshake_ping_failed",
                         f"Failed to ping client after activation",
-                        f"Ping to {client_ip} failed: {ping_result.stderr}"
+                        f"Ping to {target_ip} failed: {ping_result.stderr}"
                     )
             else:
-                logger.warning(f"Could not extract client IP from config for {client_id}")
+                logger.warning(f"Could not determine subnet for client {client_id}")
         except Exception as e:
             logger.warning(f"Error triggering handshake for client {client_id}: {e}")
         
@@ -733,6 +733,47 @@ def get_clients():
             enhanced_client['system_status'] = 'active' if system_active else 'inactive'
             enhanced_client['interface_name'] = interface_name
             
+            # Get real-time handshake data if interface is active
+            if system_active:
+                try:
+                    # Get handshake data directly from wg show
+                    result = subprocess.run(['sudo', 'wg', 'show', interface_name], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        # Parse handshake from wg show output
+                        current_peer = None
+                        real_time_handshake = None
+                        for line in result.stdout.splitlines():
+                            if line.startswith('peer: '):
+                                current_peer = line.split(': ')[1]
+                            elif line.startswith('  latest handshake:') and current_peer:
+                                handshake_str = line.split(': ')[1].strip()
+                                if handshake_str and handshake_str != '0':
+                                    if handshake_str == "Now":
+                                        real_time_handshake = datetime.utcnow()
+                                    else:
+                                        # Parse "X minutes ago", "X seconds ago", etc.
+                                        try:
+                                            total_seconds = 0
+                                            if 'seconds ago' in handshake_str:
+                                                total_seconds = int(handshake_str.split()[0])
+                                            elif 'minutes ago' in handshake_str:
+                                                total_seconds = int(handshake_str.split()[0]) * 60
+                                            elif 'hours ago' in handshake_str:
+                                                total_seconds = int(handshake_str.split()[0]) * 3600
+                                            elif 'days ago' in handshake_str:
+                                                total_seconds = int(handshake_str.split()[0]) * 86400
+                                            real_time_handshake = datetime.utcnow() - timedelta(seconds=total_seconds)
+                                        except (ValueError, IndexError):
+                                            logger.warning(f"Failed to parse handshake time: {handshake_str}")
+                                            real_time_handshake = None
+                                    break
+                        
+                        # Use real-time handshake data if available
+                        if real_time_handshake:
+                            enhanced_client['last_handshake'] = real_time_handshake.isoformat() + 'Z'
+                except Exception as e:
+                    logger.debug(f"Failed to get real-time handshake for {interface_name}: {e}")
+            
             # If there's a mismatch, log it
             if client['status'] != enhanced_client['system_status']:
                 logger.info(f"Status mismatch for {client['name']}: DB={client['status']}, System={enhanced_client['system_status']}")
@@ -1048,20 +1089,52 @@ def get_monitoring_status():
                 # Check if interface is actually active
                 is_connected = interface in active_interfaces
                 
-                # Get handshake info if interface is active
+                # Get real-time handshake info if interface is active
                 if is_connected:
-                    peers = WireGuardMonitor.check_interface(interface)
-                    for peer, peer_connected in peers.items():
-                        if peer_connected and peer in WireGuardMonitor._last_handshakes:
-                            last_handshake = WireGuardMonitor._last_handshakes[peer]
-                            break
+                    try:
+                        # Get handshake data directly from wg show
+                        result = subprocess.run(['sudo', 'wg', 'show', interface], capture_output=True, text=True)
+                        if result.returncode == 0:
+                            logger.info(f"[MONITORING] wg show {interface} output:\n{result.stdout}")
+                            # Parse handshake from wg show output
+                            current_peer = None
+                            for line in result.stdout.splitlines():
+                                if line.startswith('peer: '):
+                                    current_peer = line.split(': ')[1]
+                                    logger.info(f"[MONITORING] Found peer: {current_peer[:8]}...")
+                                elif line.startswith('  latest handshake:') and current_peer:
+                                    handshake_str = line.split(': ')[1].strip()
+                                    logger.info(f"[MONITORING] Handshake for {current_peer[:8]}...: '{handshake_str}'")
+                                    if handshake_str and handshake_str != '0':
+                                        if handshake_str == "Now":
+                                            last_handshake = datetime.utcnow()
+                                        else:
+                                            # Parse "X minutes ago", "X seconds ago", etc.
+                                            try:
+                                                total_seconds = 0
+                                                if 'seconds ago' in handshake_str:
+                                                    total_seconds = int(handshake_str.split()[0])
+                                                elif 'minutes ago' in handshake_str:
+                                                    total_seconds = int(handshake_str.split()[0]) * 60
+                                                elif 'hours ago' in handshake_str:
+                                                    total_seconds = int(handshake_str.split()[0]) * 3600
+                                                elif 'days ago' in handshake_str:
+                                                    total_seconds = int(handshake_str.split()[0]) * 86400
+                                                last_handshake = datetime.utcnow() - timedelta(seconds=total_seconds)
+                                            except (ValueError, IndexError):
+                                                logger.warning(f"Failed to parse handshake time: {handshake_str}")
+                                                last_handshake = None
+                                        break
+                    except Exception as e:
+                        logger.debug(f"Failed to get real-time handshake for {interface}: {e}")
 
             status[client['id']] = {
                 'name': client['name'],
                 'connected': is_connected,  # Use actual interface status from wg show
-                'last_handshake': last_handshake.isoformat() if last_handshake else None,
+                'last_handshake': last_handshake.isoformat() + 'Z' if last_handshake else None,
                 'last_alert': None  # You can enhance this to fetch from alert history if needed
             }
+            logger.info(f"[MONITORING] Client {client['name']}: connected={is_connected}, handshake={last_handshake.isoformat() if last_handshake else 'None'}")
         return jsonify({
             'status': 'success',
             'data': {
