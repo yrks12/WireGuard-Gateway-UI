@@ -19,7 +19,7 @@ class PendingConfigsService:
         """Get the file path for a pending config."""
         return os.path.join(self.storage_dir, f"{config_id}.json")
     
-    def store_pending_config(self, config_content: str) -> str:
+    def store_pending_config(self, config_content: str, original_filename: str = None) -> str:
         """
         Store a new config that requires subnet input.
         Returns the config ID.
@@ -36,6 +36,10 @@ class PendingConfigsService:
             'created_at': datetime.now(timezone.utc).isoformat(),
             'expires_at': expires_at.isoformat()
         }
+        
+        # Store original filename if provided
+        if original_filename:
+            config_data['original_filename'] = original_filename
         
         with open(config_path, 'w') as f:
             json.dump(config_data, f)
@@ -74,12 +78,12 @@ class PendingConfigsService:
         Update a pending config with a new subnet.
         Returns: (success, error_message, updated_config)
         """
-        config_data = self.get_pending_config(config_id)
-        if not config_data:
+        stored_config_data = self.get_pending_config(config_id)
+        if not stored_config_data:
             return False, "Config not found or expired", None
         
         # Find the line with AllowedIPs and replace its value
-        content = config_data['content']
+        content = stored_config_data['content']
         updated_content_lines = []
         for line in content.splitlines():
             if line.strip().startswith('AllowedIPs'):
@@ -90,21 +94,32 @@ class PendingConfigsService:
         
         # Validate the updated config
         from app.services.wireguard import WireGuardService
-        is_valid, error_msg, config_data = WireGuardService.validate_config(updated_content)
+        is_valid, error_msg, validated_config_data = WireGuardService.validate_config(updated_content)
         
         if not is_valid:
             return False, error_msg, None
         
         # Update the stored config
-        config_data['content'] = updated_content
-        config_data['status'] = 'validated'
-        config_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+        stored_config_data['content'] = updated_content
+        stored_config_data['status'] = 'validated'
+        stored_config_data['updated_at'] = datetime.now(timezone.utc).isoformat()
         
         config_path = self._get_config_path(config_id)
         with open(config_path, 'w') as f:
-            json.dump(config_data, f)
+            json.dump(stored_config_data, f)
         
-        return True, None, config_data
+        # Return the updated config data including public_key for the route
+        return_data = {
+            'content': updated_content,
+            'public_key': validated_config_data['public_key'],
+            'status': 'validated'
+        }
+        
+        # Include original filename if it exists
+        if 'original_filename' in stored_config_data:
+            return_data['original_filename'] = stored_config_data['original_filename']
+        
+        return True, None, return_data
     
     def delete_pending_config(self, config_id: str) -> bool:
         """Delete a pending config."""

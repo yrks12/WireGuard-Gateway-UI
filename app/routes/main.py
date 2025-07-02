@@ -111,7 +111,7 @@ def upload_config():
         if not is_valid:
             # If the error is about 0.0.0.0/0, store as pending config
             if "0.0.0.0/0" in error_msg:
-                config_id = pending_configs.store_pending_config(config_content)
+                config_id = pending_configs.store_pending_config(config_content, config_file.filename)
                 return jsonify({
                     'status': 'pending_subnet',
                     'config_id': config_id,
@@ -160,11 +160,17 @@ def submit_subnet():
         return jsonify({'error': error_msg}), 400
     
     # Store the updated config and metadata
+    # Use original filename if available
+    original_filename = updated_config.get('original_filename')
     client_id, metadata = current_app.config_storage.store_config(
         updated_config['content'],
         subnet,
-        updated_config['public_key']
+        updated_config['public_key'],
+        original_filename=original_filename
     )
+    
+    # Delete the pending config after successful storage
+    pending_configs.delete_pending_config(config_id)
     
     return jsonify({
         'status': 'success',
