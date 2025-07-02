@@ -40,11 +40,16 @@
 
 ## Pending Fixes 🔄
 
-### Fix #1: Client Name Lost on Subnet Prompt (PRIORITY: LOW)
-- **Status**: ❌ NOT STARTED
-- **Branch**: `fix/client-name-lost-on-subnet` (created but no implementation)
+### Fix #1: Client Name Lost on Subnet Prompt
+- **Status**: ✅ COMPLETED & PUSHED
+- **Branch**: `fix/client-name-lost-on-subnet` (ready for PR)
 - **Root Cause**: When user fixes subnet, original client name is lost
-- **Priority**: Low - cosmetic issue only
+- **Solution**: 
+  - Modified pending_configs.py to store original filename
+  - Updated routes to pass and use original filename
+  - Added cleanup to prevent duplicate clients
+- **Result**: Client names now preserved when fixing subnet
+- **PR**: Ready to create at https://github.com/yrks12/WireGuard-Gateway-UI/compare/main...fix/client-name-lost-on-subnet
 
 ## Architecture Issues Identified 🔍
 
