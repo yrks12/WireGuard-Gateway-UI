@@ -1067,9 +1067,12 @@ def get_monitoring_status():
                 # Get handshake info if interface is active
                 if is_connected:
                     peers = WireGuardMonitor.check_interface(interface)
+                    logger.debug(f"Interface {interface}: found {len(peers)} peers, handshakes available for {len(WireGuardMonitor._last_handshakes)} peers")
                     for peer, peer_connected in peers.items():
+                        logger.debug(f"Peer {peer[:8]}...: connected={peer_connected}, in handshakes={peer in WireGuardMonitor._last_handshakes}")
                         if peer_connected and peer in WireGuardMonitor._last_handshakes:
                             last_handshake = WireGuardMonitor._last_handshakes[peer]
+                            logger.debug(f"Using handshake time {last_handshake} for peer {peer[:8]}...")
                             break
 
             status[client['id']] = {
