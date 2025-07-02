@@ -33,6 +33,16 @@ def create_app(test_config=None):
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
+    # Enhanced SQLAlchemy configuration for multi-threaded database access
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+        'connect_args': {
+            'check_same_thread': False,  # Allow SQLite to be used across threads
+            'timeout': 30  # 30 second timeout for database operations
+        }
+    }
+    
     # Set up instance paths
     app.instance_path = os.getenv('INSTANCE_PATH', './instance')
     os.makedirs(app.instance_path, exist_ok=True)
