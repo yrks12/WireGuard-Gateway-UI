@@ -361,41 +361,40 @@ def activate_client(client_id):
         except Exception as e:
             logger.warning(f"Exception setting up iptables for {client_id}: {e}")
         
-        # Trigger initial handshake by pinging client's internal IP
+        # Trigger initial handshake by pinging client's subnet (AllowedIPs)
         try:
-            # Extract client's actual IP from the WireGuard config file
-            with open(config_path, 'r') as f:
-                config_content = f.read()
-            
-            # Look for Address line in [Interface] section
-            import re
-            address_match = re.search(r'Address\s*=\s*([^/\s,]+)', config_content)
-            if address_match:
-                client_ip = address_match.group(1).strip()
-                logger.info(f"Triggering handshake for client {client_id} by pinging {client_ip}")
+            # Use the subnet from database (AllowedIPs) to generate a ping target
+            subnet = client.get('subnet', '')
+            if subnet and '/' in subnet:
+                # Extract network and generate first usable IP
+                import ipaddress
+                network = ipaddress.IPv4Network(subnet, strict=False)
+                # Use the first host IP in the subnet (e.g., 192.168.101.1 for 192.168.101.0/24)
+                target_ip = str(network.network_address + 1)
+                logger.info(f"Triggering handshake for client {client_id} by pinging subnet {subnet} at {target_ip}")
                 
                 ping_result = subprocess.run(
-                    ['sudo', 'ping', '-c', '1', '-W', '2', client_ip],
+                    ['sudo', 'ping', '-c', '1', '-W', '2', target_ip],
                     capture_output=True,
                     text=True
                 )
                 
                 if ping_result.returncode == 0:
-                    logger.info(f"Successfully pinged client {client_id} at {client_ip} - handshake established")
+                    logger.info(f"Successfully pinged client {client_id} subnet at {target_ip} - handshake established")
                     current_app.config_storage.log_monitoring_event(
                         client_id, client['name'], "handshake_established",
                         f"Initial handshake triggered successfully",
-                        f"Pinged {client_ip}"
+                        f"Pinged {target_ip} in subnet {subnet}"
                     )
                 else:
-                    logger.warning(f"Ping to client {client_id} at {client_ip} failed, but interface is up")
+                    logger.warning(f"Ping to client {client_id} subnet at {target_ip} failed, but interface is up")
                     current_app.config_storage.log_monitoring_event(
                         client_id, client['name'], "handshake_ping_failed",
                         f"Failed to ping client after activation",
-                        f"Ping to {client_ip} failed: {ping_result.stderr}"
+                        f"Ping to {target_ip} failed: {ping_result.stderr}"
                     )
             else:
-                logger.warning(f"Could not extract client IP from config for {client_id}")
+                logger.warning(f"Could not determine subnet for client {client_id}")
         except Exception as e:
             logger.warning(f"Error triggering handshake for client {client_id}: {e}")
         
