@@ -127,11 +127,15 @@
         reconnectModal = new bootstrap.Modal(document.getElementById('reconnectModal'));
     });
 
-    // Function to format timestamp
+    // Function to format timestamp in UTC
     function formatTimestamp(timestamp) {
         if (!timestamp) return 'Never';
-        const date = new Date(timestamp);
-        return date.toLocaleString();
+        try {
+            const date = new Date(timestamp);
+            return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+        } catch (e) {
+            return 'Invalid Date';
+        }
     }
 
     // Function to format time ago

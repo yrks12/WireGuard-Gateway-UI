@@ -160,6 +160,17 @@
         setTimeout(() => alertDiv.remove(), 5000);
     }
 
+    // Function to format timestamp in UTC
+    function formatTimestampUTC(timestamp) {
+        if (!timestamp) return 'Never';
+        try {
+            const date = new Date(timestamp);
+            return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+        } catch (e) {
+            return 'Invalid Date';
+        }
+    }
+
     // Function to update test history table
     function updateTestHistory(history) {
         const historyBody = document.getElementById('test-history');
@@ -173,7 +184,7 @@
         history.forEach(test => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${new Date(test.timestamp).toLocaleString()}</td>
+                <td>${formatTimestampUTC(test.timestamp)}</td>
                 <td>${test.target || 'N/A'}</td>
                 <td>${test.latency_ms || 'N/A'}</td>
                 <td>

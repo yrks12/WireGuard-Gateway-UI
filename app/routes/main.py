@@ -733,6 +733,22 @@ def get_clients():
             enhanced_client['system_status'] = 'active' if system_active else 'inactive'
             enhanced_client['interface_name'] = interface_name
             
+            # Get real-time handshake data if interface is active
+            if system_active:
+                try:
+                    peers = WireGuardMonitor.check_interface(interface_name)
+                    real_time_handshake = None
+                    for peer, peer_connected in peers.items():
+                        if peer_connected and peer in WireGuardMonitor._last_handshakes:
+                            real_time_handshake = WireGuardMonitor._last_handshakes[peer]
+                            break
+                    
+                    # Use real-time handshake data if available
+                    if real_time_handshake:
+                        enhanced_client['last_handshake'] = real_time_handshake.isoformat()
+                except Exception as e:
+                    logger.debug(f"Failed to get real-time handshake for {interface_name}: {e}")
+            
             # If there's a mismatch, log it
             if client['status'] != enhanced_client['system_status']:
                 logger.info(f"Status mismatch for {client['name']}: DB={client['status']}, System={enhanced_client['system_status']}")
