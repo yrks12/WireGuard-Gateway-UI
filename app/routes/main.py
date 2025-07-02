@@ -1096,13 +1096,16 @@ def get_monitoring_status():
                         # Get handshake data directly from wg show
                         result = subprocess.run(['sudo', 'wg', 'show', interface], capture_output=True, text=True)
                         if result.returncode == 0:
+                            logger.info(f"[MONITORING] wg show {interface} output:\n{result.stdout}")
                             # Parse handshake from wg show output
                             current_peer = None
                             for line in result.stdout.splitlines():
                                 if line.startswith('peer: '):
                                     current_peer = line.split(': ')[1]
+                                    logger.info(f"[MONITORING] Found peer: {current_peer[:8]}...")
                                 elif line.startswith('  latest handshake:') and current_peer:
                                     handshake_str = line.split(': ')[1].strip()
+                                    logger.info(f"[MONITORING] Handshake for {current_peer[:8]}...: '{handshake_str}'")
                                     if handshake_str and handshake_str != '0':
                                         if handshake_str == "Now":
                                             last_handshake = datetime.utcnow()
@@ -1132,6 +1135,7 @@ def get_monitoring_status():
                 'last_handshake': last_handshake.isoformat() if last_handshake else None,
                 'last_alert': None  # You can enhance this to fetch from alert history if needed
             }
+            logger.info(f"[MONITORING] Client {client['name']}: connected={is_connected}, handshake={last_handshake.isoformat() if last_handshake else 'None'}")
         return jsonify({
             'status': 'success',
             'data': {
