@@ -770,7 +770,7 @@ def get_clients():
                         
                         # Use real-time handshake data if available
                         if real_time_handshake:
-                            enhanced_client['last_handshake'] = real_time_handshake.isoformat()
+                            enhanced_client['last_handshake'] = real_time_handshake.isoformat() + 'Z'
                 except Exception as e:
                     logger.debug(f"Failed to get real-time handshake for {interface_name}: {e}")
             
@@ -1131,7 +1131,7 @@ def get_monitoring_status():
             status[client['id']] = {
                 'name': client['name'],
                 'connected': is_connected,  # Use actual interface status from wg show
-                'last_handshake': last_handshake.isoformat() if last_handshake else None,
+                'last_handshake': last_handshake.isoformat() + 'Z' if last_handshake else None,
                 'last_alert': None  # You can enhance this to fetch from alert history if needed
             }
             logger.info(f"[MONITORING] Client {client['name']}: connected={is_connected}, handshake={last_handshake.isoformat() if last_handshake else 'None'}")
