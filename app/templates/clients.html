@@ -162,7 +162,7 @@
                 data.clients.forEach(client => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${client.name || client.id}</td>
+                        <td>${(client.name || client.id).split('_')[0]}</td>
                         <td>${client.subnet || 'N/A'}</td>
                         <td><span class="badge ${client.status === 'active' ? 'bg-success' : 'bg-danger'}">${client.status}</span></td>
                         <td>${client.last_handshake ? formatTimestampUTC(client.last_handshake) : 'Never'}</td>
