@@ -218,8 +218,8 @@ class AutoReconnectService:
                 'max_attempts': cls.MAX_RECONNECT_ATTEMPTS,
                 'last_attempt': last_attempt.isoformat() if last_attempt else None,
                 'last_success': last_success.isoformat() if last_success else None,
-                'time_since_attempt': (now - last_attempt) if last_attempt else None,
-                'time_since_success': (now - last_success) if last_success else None,
+                'time_since_attempt': (now - last_attempt).total_seconds() if last_attempt else None,
+                'time_since_success': (now - last_success).total_seconds() if last_success else None,
                 'can_reconnect': cls._should_attempt_reconnection(client_id)
             }
         
