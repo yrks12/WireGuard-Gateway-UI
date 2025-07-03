@@ -526,9 +526,16 @@ with app.app_context():
 "
 DB_INIT_EOF
 
-# Ensure database file has correct ownership and permissions
+# Ensure database files have correct ownership and permissions
 chown wireguard:wireguard $DB_FILE
 chmod 666 $DB_FILE
+
+# Also ensure configs.db has correct permissions
+CONFIGS_DB_FILE="$INSTANCE_DIR/configs.db"
+if [ -f "$CONFIGS_DB_FILE" ]; then
+    chown wireguard:wireguard $CONFIGS_DB_FILE
+    chmod 666 $CONFIGS_DB_FILE
+fi
 
 # Restore email settings if backup exists
 if [ -f "$EMAIL_BACKUP_FILE" ]; then
